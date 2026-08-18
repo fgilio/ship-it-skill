@@ -19,7 +19,7 @@ Progressive shipping pipeline. Runs one or more stages depending on `$ARGUMENTS`
 - `/ship-it commit` = commit only
 - `/ship-it push` = commit + push
 - `/ship-it monitor` = monitor CI only
-- `/ship-it pr` = commit + push + create PR using the `pr-mr-guidelines` skill, then monitor CI
+- `/ship-it pr` = commit + push + create PR using the `pr-guidelines` skill, then monitor CI
 - `/ship-it follow-up` = review comments on the session's PRs: address, reply, resolve (runs commit + push + monitor when fixes produce commits)
 
 ## Stage Dispatch
@@ -105,7 +105,7 @@ Useful commands:
 
 Create a pull request for the current branch.
 
-1. Use the `pr-mr-guidelines` skill for the title and description format
+1. Use the `pr-guidelines` skill for the title and description format
 2. Create the PR with `gh pr create`
 3. Report the URL of the created PR
 
