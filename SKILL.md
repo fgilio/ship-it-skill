@@ -99,6 +99,10 @@ Useful commands:
 3. If **passed/succeeded**: report success and stop
 4. If **failed**: report which job(s) failed, investigate logs, fix the errors, then commit + push the fix and restart monitoring
 
+### No-op merges
+
+After merging changes that need no test or deploy (docs-only, dependabot bumps, config no workflow consumes), don't monitor the triggered main-branch runs — cancel them: `gh run list --branch main --limit 3` to find them, `gh run cancel <run-id>` for each. Only when the merge provably touches nothing tested or deployed; when unsure, monitor as usual.
+
 ---
 
 ## Stage: PR
