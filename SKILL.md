@@ -62,7 +62,7 @@ The PRs being worked on in this session, resolved in order:
 
 1. PRs created or discussed earlier in this conversation (numbers, URLs, `/ship-it pr` output)
 2. Otherwise, the open PR for the current branch: `gh pr view --json number,url,title`
-3. If neither yields a PR, ask which PR(s) to target using AskUserQuestion
+3. If neither yields a PR, ask which PR(s) to target using AskUserQuestion or request_user_input
 
 Run the loop below for each PR in scope.
 
@@ -80,10 +80,7 @@ gh api graphql \
 
 Keep two IDs per thread: the thread `id` (needed to resolve it) and the first comment's `databaseId` (needed to reply). Skip threads where `isResolved` is true; treat `isOutdated` threads as still needing a reply. If `hasNextPage` is true, re-run with an added `$after:String` variable, `reviewThreads(first:100, after:$after)`, and `-f after=<endCursor>`.
 
-Also gather feedback that lives outside review threads:
-
-- PR-level comments: `gh pr view <number> --json comments`
-- Review summaries (especially "changes requested"): `gh pr view <number> --json reviews`
+Also read feedback that lives outside review threads, especially "changes requested" reviews: `gh pr view <number> --json comments,reviews`.
 
 ### Triage each unresolved thread
 
@@ -91,7 +88,7 @@ Every thread gets exactly one of three outcomes — never silently skip one:
 
 - **Fix**: the comment asks for a change that is correct or cheap. Implement it.
 - **Answer**: a question, or a suggestion better met with explanation than code. Reply, no code change.
-- **Escalate**: disagreement with the reviewer, scope or product calls, anything needing the user's input. Batch ALL escalations into a single AskUserQuestion call (one question per thread), then act on the answers as Fix or Answer.
+- **Escalate**: disagreement with the reviewer, scope or product calls, anything needing the user's input. Batch ALL escalations into a single AskUserQuestion or request_user_input call (one question per thread), then act on the answers as Fix or Answer.
 
 ### Apply, reply, resolve
 
