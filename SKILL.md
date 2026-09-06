@@ -11,17 +11,6 @@ argument-hint: "[commit | push | monitor | pr | follow-up]"
 
 # Ship it
 
-Progressive shipping pipeline. Runs one or more stages depending on `$ARGUMENTS`.
-
-## Usage
-
-- `/ship-it` (no args) = commit + push + monitor CI
-- `/ship-it commit` = commit only
-- `/ship-it push` = commit + push
-- `/ship-it monitor` = monitor CI only
-- `/ship-it pr` = commit + push + create PR using the `pr-guidelines` skill, then monitor CI
-- `/ship-it follow-up` = review comments on the session's PRs: address, reply, resolve (runs commit + push + monitor when fixes produce commits)
-
 ## Stage Dispatch
 
 Parse `$ARGUMENTS` (lowercased, trimmed) to determine which stages to execute:
@@ -37,83 +26,31 @@ Parse `$ARGUMENTS` (lowercased, trimmed) to determine which stages to execute:
 
 If the argument doesn't match any of the above, tell the user the available options and stop.
 
----
-
 ## Stage: Commit
 
-Commit changes granularly, in isolated commits, as a very senior engineer would:
+Commit in focused, atomic commits, one logical change each, with conventional commit messages: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, plus an optional scope (`feat(auth): ...`). If there are no changes to commit, skip this stage and notify the user.
 
-- Group related changes into focused, atomic commits
-- Each commit should represent one logical change
-- Write clear, conventional commit messages
-- If there are no changes to commit, skip this stage and notify the user
-
-### Conventional Commit Format
-
-Keep commits atomic and descriptive. Common prefixes:
-
-- `feat: add user authentication endpoint`
-- `fix: resolve null pointer in payment processing`
-- `refactor: extract validation logic to service class`
-- `test: add coverage for subscription renewal`
-- `docs: update API documentation for v2 endpoints`
-- `chore: bump dependency versions`
-
-Scopes are welcome when they add clarity: `feat(auth): ...`, `fix(setup): ...`.
-
-### Git Hooks
-
-This project may have Git hooks (pre-commit, commit-msg, etc.). If a hook fails:
-
-1. Read the hook's error output
-2. Fix the issues it reports
-3. Re-attempt the commit
-4. Do NOT bypass hooks with `--no-verify`
-
----
+If a commit or push hook fails, fix what it reports and retry. Do NOT bypass hooks with `--no-verify`.
 
 ## Stage: Push
 
-Push committed changes to the remote repository.
-
-- Push to the current branch's upstream (or set upstream if needed)
-- If a pre-push hook fails, fix the errors and retry
-- Do NOT use `--force` unless explicitly instructed
-
----
+Push to the current branch's upstream (or set upstream if needed). Do NOT use `--force` unless explicitly instructed.
 
 ## Stage: Monitor
 
-Monitor GitHub Actions for the current branch, checking at ~1 minute intervals.
+Monitor GitHub Actions for the current branch, checking at ~1 minute intervals:
 
-Useful commands:
-
-- `gh pr checks <number>` — check rollup for a PR
-- `gh run list --branch <branch> --limit 5` — recent workflow runs
-- `gh run view <run-id> --log-failed` — logs of the failed jobs only
-
-### Monitoring Loop
-
-1. Check workflow status
-2. If **running/pending**: wait ~1 minute, check again
-3. If **passed/succeeded**: report success and stop
-4. If **failed**: report which job(s) failed, investigate logs, fix the errors, then commit + push the fix and restart monitoring
+1. If **running/pending**: wait ~1 minute, check again
+2. If **passed/succeeded**: report success and stop
+3. If **failed**: report which job(s) failed, investigate logs, fix the errors, then commit + push the fix and restart monitoring
 
 ### No-op merges
 
 After merging changes that need no test or deploy (docs-only, dependabot bumps, config no workflow consumes), don't monitor the triggered main-branch runs — cancel them: `gh run list --branch main --limit 3` to find them, `gh run cancel <run-id>` for each. Only when the merge provably touches nothing tested or deployed; when unsure, monitor as usual.
 
----
-
 ## Stage: PR
 
-Create a pull request for the current branch.
-
-1. Use the `pr-guidelines` skill for the title and description format
-2. Create the PR with `gh pr create`
-3. Report the URL of the created PR
-
----
+Create the PR with `gh pr create`, using the `pr-guidelines` skill for the title and description format. Report the URL of the created PR.
 
 ## Stage: Follow-up
 
