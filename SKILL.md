@@ -6,7 +6,7 @@ description: >
   Stages selected via arguments; defaults to full pipeline.
 user-invocable: true
 disable-model-invocation: true
-argument-hint: "[commit | push | monitor | pr | follow-up]"
+argument-hint: "[commit | push | monitor | pr | follow-up | fu]"
 ---
 
 # Ship it
@@ -22,7 +22,7 @@ Parse `$ARGUMENTS` (lowercased, trimmed) to determine which stages to execute:
 | `push` | commit, push |
 | `monitor` | monitor |
 | `pr` | commit, push, pr, monitor |
-| `follow-up` | follow-up |
+| `follow-up`, `fu` | follow-up |
 
 If the argument doesn't match any of the above, tell the user the available options and stop.
 
