@@ -2,7 +2,8 @@
 name: ship-it
 description: >
   Ship code: commit granularly, push, monitor GitHub Actions, create PR,
-  follow up on PR review comments (address, reply, resolve).
+  follow up on PR review comments (address, reply, resolve, and hand
+  check-shaped findings to bonsai:guard).
   Stages selected via arguments; defaults to full pipeline.
 user-invocable: true
 disable-model-invocation: true
@@ -82,6 +83,10 @@ Keep two IDs per thread: the thread `id` (needed to resolve it) and the first co
 
 Also read feedback that lives outside review threads, especially "changes requested" reviews: `gh pr view <number> --json comments,reviews`.
 
+### Guardrails
+
+When the `bonsai:guard` skill is available, run it once, on every PR in scope together, with `--no-reply`, before the first triage. It settles with the user which findings get a check, opens one guardrail PR per check from the default branch, and returns which threads each one covers. Its PRs build in the background, so triage and fix while they do, and reply only once it reports.
+
 ### Triage each unresolved thread
 
 Every thread gets exactly one of three outcomes — never silently skip one:
@@ -96,7 +101,7 @@ Order matters — replies reference commits, so code lands first:
 
 1. Implement all Fix items for this PR
 2. Run the **commit** and **push** stages for those changes
-3. Reply to every triaged thread, referencing the fix commit SHA where one exists. Write replies in the user's voice — load the `fgilio-voice` skill before writing them.
+3. Reply to every triaged thread, referencing the fix commit SHA and the guardrail PR that covers it, where each exists. Write replies in the user's voice — load the `fgilio-voice` skill before writing them.
    - Review thread reply (`in_reply_to` takes the first comment's `databaseId`):
      ```bash
      gh api repos/<owner>/<repo>/pulls/<number>/comments -F in_reply_to=<databaseId> -f body='...'
@@ -113,4 +118,4 @@ Order matters — replies reference commits, so code lands first:
 
 ### Report
 
-End with a per-PR summary: threads fixed / answered / escalated / left open for the reviewer, plus CI status.
+End with a per-PR summary: threads fixed / answered / escalated / left open for the reviewer, the guardrail PRs opened, plus CI status.

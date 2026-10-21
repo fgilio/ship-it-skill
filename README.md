@@ -23,6 +23,10 @@ The argument picks the stages:
 
 The commands above assume a skills-directory install. Installed as a plugin, skills are namespaced as `/<plugin>:<skill>`, so the command becomes `/ship-it:ship-it`.
 
+## Guardrails
+
+With [bonsai](https://github.com/publicala/claude-plugins/tree/main/plugins/bonsai) installed, `fu` hands the PRs to `/bonsai:guard` before it replies. Guard turns findings a check could have caught into one guardrail PR each, and every reply cites the guardrail PR next to the fix commit.
+
 ## Requirements
 
 The GitHub CLI (`gh`), authenticated. PR descriptions follow the `pr-guidelines` skill and replies the `fgilio-voice` skill when the session has them.
