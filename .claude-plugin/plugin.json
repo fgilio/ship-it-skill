@@ -1,0 +1,9 @@
+{
+  "name": "ship-it",
+  "description": "Ship code: commit granularly, push, watch GitHub Actions, open the PR, and follow up on its review threads (address, reply, resolve).",
+  "author": {
+    "name": "Franco Gilio"
+  },
+  "license": "MIT",
+  "repository": "https://github.com/fgilio/ship-it-skill"
+}

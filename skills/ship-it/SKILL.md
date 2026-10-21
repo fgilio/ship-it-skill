@@ -15,14 +15,14 @@ argument-hint: "[commit | push | monitor | pr | follow-up | fu]"
 
 Parse `$ARGUMENTS` (lowercased, trimmed) to determine which stages to execute:
 
-| Argument | Stages |
-|----------|--------|
-| *(empty)* | commit, push, monitor |
-| `commit` | commit |
-| `push` | commit, push |
-| `monitor` | monitor |
-| `pr` | commit, push, pr, monitor |
-| `follow-up`, `fu` | follow-up |
+| Argument          | Stages                    |
+| ----------------- | ------------------------- |
+| _(empty)_         | commit, push, monitor     |
+| `commit`          | commit                    |
+| `push`            | commit, push              |
+| `monitor`         | monitor                   |
+| `pr`              | commit, push, pr, monitor |
+| `follow-up`, `fu` | follow-up                 |
 
 If the argument doesn't match any of the above, tell the user the available options and stop.
 
