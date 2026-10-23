@@ -1,13 +1,18 @@
 # Watch CI
 
-Watch the GitHub Actions runs of the pushed commit until they end:
+Watch the checks of the pushed commit until they end.
 
-```bash
-gh run list --commit <sha> --json databaseId,workflowName,status,conclusion
-gh run watch <run id> --exit-status --compact
-```
+- **A PR's head**: `gh pr checks <number> --watch --required`. It waits for the checks the merge needs, including required workflows an organization ruleset adds from outside the repository, and leaves out slow checks nothing waits for, such as a review service's.
+- **A commit without a PR** (the default branch after a merge): its Actions runs.
 
-A run can outlast a command's time limit, so start the watch as a background command when the harness offers one, and act when it ends. Runs take a few seconds to register after a push. A commit with no run a minute after the push has nothing to watch: say so.
+  ```bash
+  gh run list --commit <sha> --json databaseId,workflowName,status,conclusion
+  gh run watch <run id> --exit-status --compact
+  ```
+
+  `gh run watch` answers 404 for a run whose workflow lives outside the repository, whatever the run's result. Read that run's result from the commit's check runs instead: `gh api repos/<owner>/<repo>/commits/<sha>/check-runs`.
+
+A watch can outlast a command's time limit, so start it as a background command when the harness offers one, and act when it ends. Runs take a few seconds to register after a push. A commit with no check a minute after the push has nothing to watch: say so.
 
 - **Passed**: report it.
 - **Failed**: read the failed jobs' logs (`gh run view <run id> --log-failed`), fix the cause, commit, push, and watch the new commit's runs.
