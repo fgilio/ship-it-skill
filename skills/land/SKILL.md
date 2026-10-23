@@ -11,6 +11,8 @@ argument-hint: "[merge-ready | merge | auto-merge] [--guard]"
 
 Land takes a known change through a fixed line of gates, and **every gate leaves an artifact** the next gate reads. A PR reaches the user with its proof, its reading guide and a decision on every finding, so the merge takes a short read.
 
+The aim is to deploy as often as possible: small PRs, each merged and deployed on its own as soon as it is ready. The plan's shape decides how often that can happen, so shape for flow: many PRs side by side, short chains.
+
 To follow another ship-it skill, read `${CLAUDE_SKILL_DIR}/../<name>/SKILL.md`. Inside that file, `${CLAUDE_SKILL_DIR}` means `${CLAUDE_SKILL_DIR}/../<name>`, and `$ARGUMENTS` means the arguments land passes. References live in `${CLAUDE_SKILL_DIR}/../../references/`.
 
 ## 0. Continue
@@ -28,13 +30,14 @@ The artifact is the PR plan: each PR with its title, its scope, and the PRs it d
 - One PR when the change reads well as one.
 - A preparation PR (moves, renames, refactors that keep behavior) splits from the behavior change only when the split makes the behavior change easier to review.
 - **Wide, not deep**: each PR merges into the default branch on its own. Dead code, or a feature behind a flag that is off, merges fine.
-- A PR depends on another only when it needs that PR's code. Code two PRs share lives once, in the lowest PR that needs it.
+- A PR **needs the code** of another only when it calls or changes that PR's code. Code two PRs share lives once, in the lowest PR that needs it.
+- A PR **needs the evidence** of another when it should be built on what production shows after that PR ships: logging or metrics that show how a path behaves today, a flag turned on for a few users first. The plan names the evidence, where to read it, and how long it takes to gather.
 
 ## 3. Ask
 
 One AskUserQuestion, holding only the questions `$ARGUMENTS` does not answer:
 
-- **Merge mode** (`merge-modes.md`): `merge-ready` (recommended), `merge`, or `auto-merge`. When the plan holds a chain of dependent PRs, the question says that in `merge-ready` mode each link waits for the user's merge.
+- **Merge mode** (`merge-modes.md`): `merge-ready` (recommended), `merge`, or `auto-merge`. When the plan holds a chain of dependent PRs, the question says that in `merge-ready` mode each link waits for the user's merge, and a link that needs evidence also waits for the user's deploy.
 - **Guardrails**, only when the session has the `bonsai:guard` skill: no (recommended), or yes, so that each review round hands its findings to guard.
 
 ## 4. Run file
@@ -47,7 +50,8 @@ Write the run to `~/.claude/ship-it/runs/<owner>/<repo>/<plan slug>.json` before
   "mode": "merge-ready",
   "guard": false,
   "prs": [
-    { "title": "Render invoices to PDF", "branch": "invoice-pdf", "depends_on": [], "number": 41, "step": "review", "base": "9b1e0c2", "proof_head": "3f2c1aa" }
+    { "title": "Log invoice downloads", "branch": "invoice-download-log", "depends_on": [], "number": 40, "step": "merged", "base": "77ad0e4", "proof_head": "e51b9c3" },
+    { "title": "Render invoices to PDF", "branch": "invoice-pdf", "depends_on": [{ "title": "Log invoice downloads", "needs": "evidence" }], "number": 41, "step": "review", "base": "9b1e0c2", "proof_head": "3f2c1aa" }
   ],
   "waiting": ["Hide voided invoices from the download list?"]
 }
@@ -55,7 +59,9 @@ Write the run to `~/.claude/ship-it/runs/<owner>/<repo>/<plan slug>.json` before
 
 ## 5. Each PR
 
-PRs move in the plan's order, like a conveyor. A PR that depends on another starts its review rounds only after that PR merged and its own branch was rebased onto the default branch, so every review reads the code the PR will merge onto. While a PR waits for reviews, CI, a merge or a deploy, work on the next PR whose dependencies merged. A PR whose parent has not merged yet can go ahead through steps 2 to 5 on a branch cut from its parent's branch, and opens only after step 10 rebased it.
+PRs move in the plan's order, like a conveyor. A PR that depends on another starts its review rounds only after that PR merged and its own branch was rebased onto the default branch, so every review reads the code the PR will merge onto. While a PR waits for reviews, CI, a merge or a deploy, work on the next PR whose dependencies merged. A PR that needs a parent's code can go ahead through steps 2 to 5 on a branch cut from its parent's branch before the parent merges, and opens only after step 10 rebased it.
+
+A PR that needs a parent's evidence starts only after the parent is deployed and the evidence is in, since the evidence can change what the PR does. Read it with the signals the `verify` skill finds. Then hold the plan against it: when the evidence changes a later PR, update the plan, and say what changed and why before going on. While the evidence gathers, other PRs go on. When nothing else can, the run stops: schedule a wake-up for when the evidence should be in, or let the user continue, since the run file holds the place.
 
 For each PR:
 

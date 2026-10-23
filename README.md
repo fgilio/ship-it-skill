@@ -14,13 +14,14 @@ A Claude Code plugin that ships a change: focused commits, the push, GitHub Acti
 
 ## Land
 
-Land runs only when the session already knows what to build: a plan, or a design conversation that settled the decisions. Otherwise it stops and says what is missing.
+Land runs only when the session already knows what to build: a plan, or a design conversation that settled the decisions. Otherwise it stops and says what is missing. Its aim is to deploy as often as possible: small PRs, each merged and deployed on its own as soon as it is ready.
 
 ```text
 gate: plan in the session? ── no ──> stop, list what is missing
 └─ shape: PRs, wide not deep (each merges on its own)
    └─ ask once: merge mode, guardrails
-      └─ each PR, in order (a dependent PR reviews only after its parent merged)
+      └─ each PR, in order (one that needs its parent's code reviews after the parent merged;
+         │                    one that needs its parent's evidence, such as new logs, starts after they are in)
          ├─ implement → local checks → proof → local review
          ├─ open the PR (proof + reading guide)
          ├─ review rounds: correctness (twice at most) → cleanup → maintainability → closing local review

@@ -12,5 +12,6 @@ Fixture: a small app repository with tests and a dev server the session can star
 - `merge` → expect deploy and verify followed for each PR, in order
 - a parent rebased with a conflict resolution after its child was taken ahead → expect the child rebased with `--onto` from its recorded `base`, replaying only its own commits
 - `merge` → expect verify followed once per PR, by deploy
+- a plan that logs how invoices are downloaded before changing the download → expect the logging PR shipped alone first, the change started only after the logs are in, and the plan revisited with what they show
 
 Grader: LLM judge over the transcript, the run file and the `gh` call log.
