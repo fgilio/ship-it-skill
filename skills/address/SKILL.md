@@ -1,0 +1,98 @@
+---
+name: address
+description: >
+  Address review feedback on the session's pull requests: give every finding a decision (fix, answer or escalate), push the fixes, reply on each thread, and resolve it. Use after reviews land on a PR, from people or bots. Replies on review threads.
+user-invocable: true
+disable-model-invocation: true
+argument-hint: "[<PR number or URL>...] [--guard]"
+---
+
+# Address review feedback
+
+Every finding gets exactly one decision, written on the PR where the next reviewer reads it: **one finding, one decision**. A thread resolved without a reply, or a finding in a review summary that nobody answered, is a decision lost. The next review raises it again, and the next session cannot tell whether anyone weighed it.
+
+## Which PRs
+
+Resolve them in this order:
+
+1. The PR numbers or URLs in `$ARGUMENTS`.
+2. The PRs created or discussed earlier in this conversation.
+3. The open PR of the current branch: `gh pr view --json number,url,title`.
+4. When none of these yields a PR, ask which ones with AskUserQuestion.
+
+Run everything below for each PR.
+
+## Gather the findings
+
+Get `<owner>` and `<repo>` from `gh repo view --json owner,name`.
+
+Thread resolution is in GraphQL only, since `gh pr view` does not expose it. Fetch every thread:
+
+```bash
+gh api graphql \
+  -f query='query($owner:String!,$repo:String!,$pr:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$pr){reviewThreads(first:100){pageInfo{hasNextPage endCursor}nodes{id isResolved isOutdated path line comments(first:50){nodes{databaseId author{login} body url}}}}}}}' \
+  -f owner=<owner> -f repo=<repo> -F pr=<number>
+```
+
+Keep two ids per thread: the thread `id` to resolve it, and the first comment's `databaseId` to reply. Skip resolved threads. An outdated thread still needs a reply. When `hasNextPage` is true, run the query again with an added `$after:String` variable, `reviewThreads(first:100, after:$after)`, and `-f after=<endCursor>`.
+
+Then read the reviews and comments outside the threads: `gh pr view <number> --json reviews,comments`. A review body often lists findings that have no thread: a summary, or findings on lines outside the diff. Each one is a finding.
+
+The artifact is the findings list: an id (the thread id, or the review id and the item's position), the reviewer, the file and line when there is one, and the claim.
+
+## Read earlier decisions
+
+Before deciding anything, read the replies already on the PR, and on the other PRs of its stack (the PRs it builds on and the PRs built on it). A finding that repeats one already declined gets a reply linking that decision, and no change. It gets a fresh decision only when it brings a fact the earlier decision did not weigh.
+
+## Decide
+
+Group the findings by root cause first. Several findings, often from several reviewers, can share one cause, and one fix settles them all. Each one still gets its own reply.
+
+Each finding gets one of three decisions:
+
+- **Fix**: the finding holds up against the code and the tests, or the change is cheap and harmless. Implement it.
+- **Answer**: a question, a suggestion an explanation serves better, or a claim the code or a test disproves. Reply with the evidence and change nothing.
+- **Escalate**: what code, tests and earlier decisions cannot settle, such as intent, scope, accepted risk or a product call. Save it and go on: the other findings do not wait for it. `${CLAUDE_SKILL_DIR}/../../references/escalation.md` sets the channel.
+
+```text
+DON'T escalate: "Should this query use the index?" (EXPLAIN answers it)
+DO escalate:    "The reviewer wants revoked invoices hidden from customers. Today they stay visible with a badge. Hide them?"
+```
+
+In a stack, a fix lands in the lowest PR that owns the code, and the PRs above it are rebased onto it. The reply names the PR and the commit that carry the fix.
+
+## Guardrails
+
+When `$ARGUMENTS` has `--guard` and the session has the `bonsai:guard` skill, run it once, on every PR in scope together, with `--no-reply`, before the first decision. It settles with the user which findings get a check, opens one guardrail PR per check from the default branch, and returns which threads each one covers. Its PRs build in the background, so decide and fix while they do, and reply only once it reports.
+
+## Apply, reply, resolve
+
+Replies cite commits, so code lands first:
+
+1. Implement every Fix.
+2. Run the repository's local checks for the touched code: the test, static analysis and format commands its CLAUDE.md, AGENTS.md or CI workflow names. Fix what fails.
+3. Commit, one commit per root cause, and push: follow `${CLAUDE_SKILL_DIR}/../../references/commit-push.md`.
+4. Reply to every finding, citing the fix commit's SHA, and the guardrail PR that covers it when there is one. Write in the user's voice: load the `fgilio-voice` skill when the session has it.
+   - A thread (`in_reply_to` takes the first comment's `databaseId`):
+     ```bash
+     gh api repos/<owner>/<repo>/pulls/<number>/comments -F in_reply_to=<databaseId> -f body='...'
+     ```
+   - Findings without a thread: one PR comment that lists each finding with its decision (fixed in `<sha>`, answered with the reason, or the user's call): `gh pr comment <number> --body-file <file>`.
+5. Resolve each thread whose fix is pushed, or whose reply settles it:
+   ```bash
+   gh api graphql \
+     -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' \
+     -f id=<threadId>
+   ```
+   Leave a thread open when the reply asks the reviewer something or waits for their review again, and while its finding waits for the user. Resolving those buries the conversation.
+6. When commits were pushed, follow `${CLAUDE_SKILL_DIR}/../../references/ci-watch.md`.
+7. Ask the saved escalations, all in one AskUserQuestion, one question per finding, each with a recommendation. Act on each answer as Fix or Answer, through steps 1 to 6.
+
+## Report
+
+For each PR: the findings fixed, answered, escalated and left open for the reviewer, the guardrail PRs, the CI result, and one line on behavior:
+
+- **Behavior changed: yes**, with the paths relative to the repository root, when any fix changed what the code does.
+- **Behavior changed: no**, when every fix touched only tests, docs, comments or wording, or refactored without changing what the code does.
+
+The review and land skills read that line to decide whether to review again and whether the proof needs a refresh.
