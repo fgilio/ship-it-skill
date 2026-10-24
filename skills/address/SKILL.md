@@ -36,13 +36,13 @@ gh api graphql \
 
 Keep two ids per thread: the thread `id` to resolve it, and the first comment's `databaseId` to reply. Skip resolved threads. An outdated thread still needs a reply. When `hasNextPage` is true, run the query again with an added `$after:String` variable, `reviewThreads(first:100, after:$after)`, and `-f after=<endCursor>`.
 
-Then read the reviews and comments outside the threads: `gh pr view <number> --json reviews,comments`. A review body often lists findings that have no thread: a summary, or findings on lines outside the diff. Each one is a finding.
+Then read the reviews and comments outside the threads: `gh pr view <number> --json reviews,comments`. A review body often lists findings that have no thread: a summary, or findings on lines outside the diff. Each one is a finding. A body that numbers its items (`M1`, `M2`, … for a checklist, `Q1`, `Q2`, … for questions) holds one finding per number, whose id is the review's URL and the number: every review starts again at `M1`.
 
 The artifact is the findings list: an id (the thread id, or the review id and the item's position), the reviewer, the file and line when there is one, and the claim.
 
 ## Read earlier decisions
 
-Before deciding anything, read the replies already on the PR, and on the other PRs of its stack (the PRs it builds on and the PRs built on it). A finding that repeats one already declined gets a reply linking that decision, and no change. It gets a fresh decision only when it brings a fact the earlier decision did not weigh.
+Before deciding anything, read the replies already on the PR, and on the other PRs of its stack (the PRs it builds on and the PRs built on it). A finding that repeats one already declined gets a reply linking that decision, and no change. It gets a fresh decision only when it brings a fact the earlier decision did not weigh. A numbered item is settled when an earlier PR comment names its review and its number with a fix or an answer, whatever the review body still shows. A reply that leaves it waiting (on the user, on the reviewer) settles nothing.
 
 ## Decide
 
@@ -52,7 +52,7 @@ Each finding gets one of three decisions:
 
 - **Fix**: the finding holds up against the code and the tests, or the change is cheap and harmless. Implement it.
 - **Answer**: a question, a suggestion an explanation serves better, or a claim the code or a test disproves. Reply with the evidence and change nothing.
-- **Escalate**: what code, tests and earlier decisions cannot settle, such as intent, scope, accepted risk or a product call. Save it and go on: the other findings do not wait for it. `${CLAUDE_SKILL_DIR}/../../references/escalation.md` sets the channel.
+- **Escalate**: what code, tests and earlier decisions cannot settle, such as intent, scope, accepted risk or a product call. A review's numbered questions are product calls, so each one escalates unless an earlier decision settles it. Save it and go on: the other findings do not wait for it. `${CLAUDE_SKILL_DIR}/../../references/escalation.md` sets the channel.
 
 ```text
 DON'T escalate: "Should this query use the index?" (EXPLAIN answers it)
@@ -71,13 +71,13 @@ Replies cite commits, so code lands first:
 
 1. Implement every Fix.
 2. Run the repository's local checks for the touched code: the test, static analysis and format commands its CLAUDE.md, AGENTS.md or CI workflow names. Fix what fails.
-3. Commit, one commit per root cause, and push: follow `${CLAUDE_SKILL_DIR}/../../references/commit-push.md`.
+3. Commit and push, following `${CLAUDE_SKILL_DIR}/../../references/commit-push.md`: one commit per root cause, and one commit for a review's numbered checklist when none of its fixes changes behavior.
 4. Reply to every finding, citing the fix commit's SHA, and the guardrail PR that covers it when there is one. Write in the user's voice: load the `fgilio-voice` skill when the session has it.
    - A thread (`in_reply_to` takes the first comment's `databaseId`):
      ```bash
      gh api repos/<owner>/<repo>/pulls/<number>/comments -F in_reply_to=<databaseId> -f body='...'
      ```
-   - Findings without a thread: one PR comment that lists each finding with its decision (fixed in `<sha>`, answered with the reason, or the user's call): `gh pr comment <number> --body-file <file>`.
+   - Findings without a thread: one PR comment that lists each finding with its decision (fixed in `<sha>`, answered with the reason, or the user's call), naming each numbered item by its review and its number (`<review URL> M2: fixed in <sha>`): `gh pr comment <number> --body-file <file>`.
 5. Resolve each thread whose fix is pushed, or whose reply settles it:
    ```bash
    gh api graphql \
