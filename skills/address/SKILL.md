@@ -36,9 +36,16 @@ gh api graphql \
 
 Keep two ids per thread: the thread `id` to resolve it, and the first comment's `databaseId` to reply. Skip resolved threads. An outdated thread still needs a reply. When `hasNextPage` is true, run the query again with an added `$after:String` variable, `reviewThreads(first:100, after:$after)`, and `-f after=<endCursor>`.
 
-Then read the reviews and comments outside the threads: `gh pr view <number> --json reviews,comments`. A review body often lists findings that have no thread: a summary, or findings on lines outside the diff. Each one is a finding. A body that numbers its items (`M1`, `M2`, … for a checklist, `Q1`, `Q2`, … for questions) holds one finding per number, whose id is the review's URL and the number: every review starts again at `M1`.
+Then read the reviews and comments outside the threads, with the URL of each (`gh pr view` gives none for a review):
 
-The artifact is the findings list: an id (the thread id, or the review id and the item's position), the reviewer, the file and line when there is one, and the claim.
+```bash
+gh api repos/<owner>/<repo>/pulls/<number>/reviews --paginate --jq '.[] | {html_url, user: .user.login, state, body}'
+gh api repos/<owner>/<repo>/issues/<number>/comments --paginate --jq '.[] | {html_url, user: .user.login, body}'
+```
+
+A review body often lists findings that have no thread: a summary, or findings on lines outside the diff. Each one is a finding. A body that numbers its items (`M1`, `M2`, … for a checklist, `Q1`, `Q2`, … for questions) holds one finding per number, whose id is the review's `html_url` and the number: every review starts again at `M1`.
+
+The artifact is the findings list: an id (the thread id, or the review's `html_url` with the item's number, or with its position when the body numbers nothing), the reviewer, the file and line when there is one, and the claim.
 
 ## Read earlier decisions
 
