@@ -23,8 +23,9 @@ gate: plan in the session? ── no ──> stop, list what is missing
       └─ each PR, in order (one that needs its parent's code reviews after the parent merged;
          │                    one that needs its parent's evidence, such as new logs, starts after they are in)
          ├─ implement → local checks → proof → local review
-         ├─ open the PR (proof + reading guide)
+         ├─ open the PR as a draft (proof + reading guide) → CI green → ready
          ├─ review rounds: correctness (twice at most) → cleanup → maintainability → closing local review
+         │  (each round waits for the last one's fixes and resolved threads, not its CI)
          ├─ close: CI green, base current, every finding decided, proof current
          └─ merge mode
             ├─ merge-ready: notify, you merge
