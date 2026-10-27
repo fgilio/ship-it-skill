@@ -70,8 +70,8 @@ For each PR:
 3. **Local checks**: the test, static analysis and format commands the repository's CLAUDE.md, AGENTS.md or CI workflow names. All green before the next step. The artifact is each command with its result.
 4. **Prove**: follow `proof.md`. The artifact is the test matrix. Record the head it ran on as `proof_head`.
 5. **Local review**: the `codex-partner` skill's review mode against the base branch when the session has it, since a second model reads the code independently, and the `code-review` skill otherwise. Fix every P0 and P1, and each P2 that holds up against the code, then run the checks and review again. After three reviews, a P0 or P1 still open is escalated as blocked for this PR, and the other PRs go on.
-6. **Open the PR**: follow the `pr` skill. The description carries the proof and the reading guide.
-7. **Review rounds**: follow the `review` skill, with `--guard` when the user chose guardrails.
+6. **Open the PR as a draft**: follow the `pr` skill with `--draft`. The description carries the proof and the reading guide. Its CI watch is the gate to the rounds: fix each failure and push until CI is green on the head. A review service that reviews every new PR, such as Codex, may answer meanwhile. Never wait for it, since it may not be set up or may stall: its findings go to the first round, which addresses every unresolved finding. When CI is green, mark the PR ready with `gh pr ready <number>`.
+7. **Review rounds**: follow the `review` skill, with `--guard` when the user chose guardrails. Only the first round waits for CI, through step 6. Each later round waits only for the previous round's fixes to be pushed and every one of its threads answered and resolved.
 8. **Close**: the PR is ready when every line of this checklist holds, and the checklist is the artifact.
    - CI is green on the head.
    - The branch is current with its base. When it is behind, rebase, then run the checks and watch CI again.

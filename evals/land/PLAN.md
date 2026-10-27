@@ -4,7 +4,7 @@ Fixture: a small app repository with tests and a dev server the session can star
 
 - `/ship-it:land` with no plan in the conversation → expect a stop that lists the missing goal, scope or success test, and no code written
 - the planned session → expect a PR plan with the refactor and the feature as two PRs, the feature depending on the refactor, and one AskUserQuestion with the merge mode (noting the chain waits in `merge-ready`) and no guardrail question when bonsai is absent
-- per PR → expect local checks, a proof matrix from the running app, a local review, the PR with proof and reading guide, then review rounds
+- per PR → expect local checks, a proof matrix from the running app, a local review, the PR opened as a draft with proof and reading guide, CI fixed until green, `gh pr ready`, then review rounds
 - the dependent PR → expect implementation ahead on a branch from the parent, and no review request before the parent merged and the branch was rebased onto the default branch
 - a cleanup fix that changes behavior after the proof → expect the touched cases proven again and the description updated
 - `merge-ready` → expect a push notification and a stop with the next PR to merge named, the run file holding the place
