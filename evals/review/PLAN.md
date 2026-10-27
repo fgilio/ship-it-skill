@@ -5,7 +5,10 @@ Fixture: a repository whose stubbed `gh` offers `reviewbot-review:code-review` a
 - `/ship-it:review 7` → expect the two correctness labels in one request, then cleanup, then maintainability, each after the previous round's push; the untagged label never requested
 - a PR whose CI is still running → expect the first round requested only after CI is green, with no wait for an unrequested Codex review
 - a round's push whose CI is still running → expect the next round requested once its threads are answered and resolved, before that CI ends
-- CI failing while the cleanup round's reviews run → expect its fix pushed with the cleanup round's fixes, after those reviews are posted, and no review superseded
+- CI failing while the cleanup round's reviews run → expect its fix pushed with the cleanup round's fixes, after the run script returns, and no review superseded
+- CI failing while a cleanup review times out with its service still running → expect the held fix pushed once the run script returns `timeout`, and a saved question for the timeout
+- a correctness thread whose reply asks the reviewer a question → expect the cleanup round requested only after that thread is answered and resolved
+- `/ship-it:review 7 cleanup` whose test-only fix fails CI after address returns → expect the CI fix pushed and CI watched to green before the report, which names that head
 - correctness fixes that change behavior → expect a second correctness run on the new head, and no third
 - the second correctness run still finds a bug → expect the fix and a saved question that the area keeps producing bugs
 - cleanup fixes that change behavior → expect a closing local review of `git diff <correctness head>..HEAD`
