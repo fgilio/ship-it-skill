@@ -29,7 +29,6 @@ The skills write each GitHub call as a `gh` command. With MCP, use the tool that
 ## What MCP cannot do
 
 - **The user's merge method** (`viewerDefaultMergeMethod`): read it from the base branch's history (`list_commits`). Commits titled `Merge pull request #<number>` mean `merge`, one commit per PR ending in `(#<number>)` means `squash`, and anything else means `rebase`. When the history mixes them, ask once.
-- **Reverting a PR** (`revertPullRequest`): revert by hand, as verify does when GitHub cannot build the revert.
 - **The checks a merge requires** (`gh pr checks --required`): MCP does not say which are required. Watch every check on the head except the ones named after a review label (`<service>-review:<kind>`), so an optional check that fails holds the watch too: fix it, or report it as outside the change.
 
 ## Waiting
@@ -39,4 +38,4 @@ A `gh` watch waits as one background command. An MCP call returns at once, so a 
 - **Events first.** When the harness can subscribe the session to the PR's activity (such as `subscribe_pr_activity`), subscribe and act on each event: a review, a comment, a finished check. Keep one timer for the wait's limit.
 - **Otherwise a timer, then one read.** Start a background `sleep` command, or use the harness's wake-up tool, and read once when it ends: every 60 seconds for CI and deploys, every 2 minutes for reviews.
 - **Read the cheapest calls that can show a change.** For a review, the PR's head and state, the head's check runs, and the PR's comments, since a refusal comes as a comment with no check: read the reviews when the check named after the label completes, or when an event announces a review.
-- The limits stay the ones the skills set: 30 minutes per review request, an hour for a merge. Between reads, work on something that does not touch the PR's branch.
+- The limits stay the ones the skills set. Between reads, work on something that does not touch the PR's branch.

@@ -47,7 +47,7 @@ When the output's `head_moved_to` is set, someone pushed during the wait: the po
 
 ### Without gh
 
-The scripts run on `gh`. In a session that reaches GitHub through MCP (`${CLAUDE_SKILL_DIR}/../../references/github.md`), carry out the same protocol with the MCP tools, so the statuses above and the steps below stay the same:
+In a session that reaches GitHub through MCP (`${CLAUDE_SKILL_DIR}/../../references/github.md`), carry out the same protocol with the MCP tools, so the statuses above and the steps below stay the same:
 
 1. **The labels.** `list_label` when the session has it. Otherwise the labels the reviews of the repository's last few merged PRs name (`pull_request_read` `get_reviews`: each `<!-- <service>-review kind=<kind>` marker names `<service>-review:<kind>`), and any label the repository's CLAUDE.md, AGENTS.md or README, or the user, names. Read each with `get_label` for its description, and keep the ones the list script would print, in its order. When this finds no tagged label, ask the user for the labels before concluding the repository offers none.
 2. **Request.** Read the PR (`pull_request_read` `get`): it is open, and note its head and labels. A label whose review already ends with this head's marker is `posted`, with no request. For the rest, note the ids of the PR's comments and of the head's check runs named after each label, then add the labels in one `issue_write`. A label still on the PR comes off in a write of its own first, since adding it again asks for nothing. Note the time.
