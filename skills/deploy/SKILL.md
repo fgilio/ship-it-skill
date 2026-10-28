@@ -34,7 +34,7 @@ Pass the head checked in step 1, so a commit pushed since then cannot merge with
 
 When GitHub refuses because the head moved, the new head goes back through the gates that brought the PR here (for land, the close checklist).
 
-Either command can return before the merge happens: auto-merge waits for checks, and a merge queue waits its turn. Wait as a background command until `gh pr view <number> --json state,mergeCommit` shows `MERGED` with a merge commit. A PR that closes without merging is escalated as blocked, and one still waiting after an hour is escalated as can wait.
+Either command can return before the merge happens: auto-merge waits for checks, and a merge queue waits its turn. Wait as a background command until `gh api 'repos/{owner}/{repo}/pulls/<number>' --jq '[.merged, .merge_commit_sha]'` shows `true` with a merge commit. A PR that closes without merging is escalated as blocked, and one still waiting after an hour is escalated as can wait.
 
 Record the merge commit's SHA.
 
@@ -42,7 +42,7 @@ Record the merge commit's SHA.
 
 How a merge reaches production differs per repository. Find it in this order, and stop at the first that applies:
 
-1. GitHub deployments for the merge commit: `gh api "repos/<owner>/<repo>/deployments?sha=<merge sha>"`.
+1. GitHub deployments for the merge commit: `gh api 'repos/{owner}/{repo}/deployments?sha=<merge sha>'`.
 2. Actions runs for the merge commit on the default branch: `gh run list --commit <merge sha>`, read for jobs that deploy (an `environment:`, a deploy step).
 3. The workflow files (`.github/workflows/*.yml`): a job that runs on a push to the default branch and deploys means a run is coming.
 4. The repository's CLAUDE.md, AGENTS.md, README or deploy docs, naming another system the session reaches with a CLI or a tool.
@@ -58,13 +58,13 @@ Watch the deploy as a background command until it ends, following `${CLAUDE_SKIL
 A run waiting for a manual approval lists its gates:
 
 ```bash
-gh api repos/<owner>/<repo>/actions/runs/<run id>/pending_deployments
+gh api 'repos/{owner}/{repo}/actions/runs/<run id>/pending_deployments'
 ```
 
 Approve each gate the user can approve (`current_user_can_approve` is true):
 
 ```bash
-gh api -X POST repos/<owner>/<repo>/actions/runs/<run id>/pending_deployments \
+gh api -X POST 'repos/{owner}/{repo}/actions/runs/<run id>/pending_deployments' \
   -F "environment_ids[]=<environment id>" -f state=approved -f comment="Approved by ship-it deploy for PR #<number>"
 ```
 

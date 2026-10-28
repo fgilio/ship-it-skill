@@ -41,7 +41,7 @@ A regression is a production problem: escalate it following `${CLAUDE_SKILL_DIR}
 ```bash
 gh api graphql \
   -f query='mutation($id:ID!){revertPullRequest(input:{pullRequestId:$id}){revertPullRequest{url}}}' \
-  -f id="$(gh pr view <number> --json id --jq .id)"
+  -f id="$(gh api 'repos/{owner}/{repo}/pulls/<number>' --jq .node_id)"
 ```
 
 When GitHub cannot build the revert (a conflict with later commits), revert the PR's commits on a branch by hand, then follow the `pr` skill. A session that reaches GitHub through MCP (`${CLAUDE_SKILL_DIR}/../../references/github.md`) has no revert call, so it reverts by hand too.
