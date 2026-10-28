@@ -9,6 +9,8 @@ argument-hint: "[--base <branch>] [--draft]"
 
 # Open a pull request
 
+GitHub calls go through `gh` or the GitHub MCP tools, whichever `${CLAUDE_SKILL_DIR}/../../references/github.md` picks. It maps each `gh` command below to its tool.
+
 1. **Commit and push.** Follow `${CLAUDE_SKILL_DIR}/../../references/commit-push.md`.
 2. **Find an open PR.** When the branch already has one (`gh pr view --json number,url,state,body`), bring its description up to date with the branch, report its URL, and go to step 5.
 3. **Write the title and description.** Use the `pr-guidelines` skill when the session has it, and the repository's PR template (`.github/pull_request_template.md`, or a file under `.github/PULL_REQUEST_TEMPLATE/`) when it has one. Describe the change in its final shape: what it does, why, and what it leaves out. When the session proved the change, the description carries the proof and the reading guide, as `${CLAUDE_SKILL_DIR}/../../references/proof.md` prescribes.

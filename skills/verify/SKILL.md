@@ -44,7 +44,7 @@ gh api graphql \
   -f id="$(gh pr view <number> --json id --jq .id)"
 ```
 
-When GitHub cannot build the revert (a conflict with later commits), revert the PR's commits on a branch by hand, then follow the `pr` skill.
+When GitHub cannot build the revert (a conflict with later commits), revert the PR's commits on a branch by hand, then follow the `pr` skill. A session that reaches GitHub through MCP (`${CLAUDE_SKILL_DIR}/../../references/github.md`) has no revert call, so it reverts by hand too.
 
 ## Report
 

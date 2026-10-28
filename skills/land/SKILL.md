@@ -15,6 +15,8 @@ The aim is to deploy as often as possible: small PRs, each merged and deployed o
 
 To follow another ship-it skill, read `${CLAUDE_SKILL_DIR}/../<name>/SKILL.md`. Inside that file, `${CLAUDE_SKILL_DIR}` means `${CLAUDE_SKILL_DIR}/../<name>`, and `$ARGUMENTS` means the arguments land passes. References live in `${CLAUDE_SKILL_DIR}/../../references/`.
 
+GitHub calls go through `gh` or the GitHub MCP tools, whichever `${CLAUDE_SKILL_DIR}/../../references/github.md` picks. It maps each `gh` command below to its tool.
+
 ## 0. Continue
 
 When a run file of this repository (section 4) still has PRs that are not done, ask once whether to continue it. Yes: check each PR's state on GitHub, start each at its recorded step, and skip sections 1 to 3. No: start at the gate, and the old run file stays as the record.

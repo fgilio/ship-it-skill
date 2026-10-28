@@ -610,4 +610,18 @@ describe("ship-it-review-run.mjs", () => {
     assert.equal(result.code, 1);
     assert.match(result.stderr, /did not answer within 0.5 seconds/);
   });
+
+  test("points to the steps without gh when gh is missing", async () => {
+    writeState();
+
+    const result = await runScript(
+      "ship-it-review-run.mjs",
+      ["7", "reviewbot-review:simplify", ...FAST],
+      { PATH: sandbox.root },
+    );
+
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, /Unable to find the gh executable/);
+    assert.match(result.stderr, /Without gh steps of skills\/review\/SKILL.md/);
+  });
 });
