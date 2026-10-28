@@ -33,7 +33,7 @@ ${CLAUDE_SKILL_DIR}/scripts/ship-it-review-run.mjs <PR> <label>...
 # → {"head": "<sha>", "reviews": [{"label": "...", "status": "posted", "review_url": "...", ...}]}
 ```
 
-Both scripts need `gh`. When `gh api repos/{owner}/{repo}` fails, follow `${CLAUDE_SKILL_DIR}/without-gh.md` instead. The run script adds the labels with the session's GitHub credentials, which must be the user's (`gh api user --jq .login`): services refuse labels a bot adds. It waits up to 30 minutes per request and asks again once when a request ends without a review, so start it as a background command and act on its output when it ends. While it waits, work on something that does not touch this PR's branch.
+Both scripts need `gh` logged in as the user, since services refuse labels a bot adds. When `gh api repos/{owner}/{repo}` fails, or `gh api user --jq .login` prints another login, follow `${CLAUDE_SKILL_DIR}/without-gh.md` instead. The run script waits up to 30 minutes per request and asks again once when a request ends without a review, so start it as a background command and act on its output when it ends. While it waits, work on something that does not touch this PR's branch.
 
 | Status | Meaning | Next |
 | --- | --- | --- |
