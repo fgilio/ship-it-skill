@@ -91,29 +91,21 @@ main(async () => {
   while (pending.length > 0) {
     await sleep(intervalSeconds);
 
-    const pullRequest = gh([
-      "pr",
-      "view",
-      number,
-      "--repo",
-      repository,
-      "--json",
-      "state,headRefOid",
-    ]);
+    const pullRequest = readPullRequest(repository, number);
 
-    if (pullRequest.state !== "OPEN") {
+    if (pullRequest.state !== "open") {
       pending.forEach((request) =>
         settle(request, "closed", {
-          reason: `The pull request is ${pullRequest.state.toLowerCase()}.`,
+          reason: `The pull request is ${pullRequest.state}.`,
         }),
       );
       break;
     }
 
-    if (pullRequest.headRefOid !== head) {
+    if (pullRequest.head !== head) {
       pending.forEach((request) =>
         settle(request, "superseded", {
-          reason: `The head moved to ${pullRequest.headRefOid}. Request the review again for the new head.`,
+          reason: `The head moved to ${pullRequest.head}. Request the review again for the new head.`,
         }),
       );
       break;
@@ -182,15 +174,7 @@ main(async () => {
   }
 
   // A review can post for the requested head just as a push moves it.
-  const { headRefOid: currentHead } = gh([
-    "pr",
-    "view",
-    number,
-    "--repo",
-    repository,
-    "--json",
-    "headRefOid",
-  ]);
+  const { head: currentHead } = readPullRequest(repository, number);
 
   printJson({
     repository,
@@ -222,23 +206,27 @@ function retryCount(value) {
 }
 
 function openHead(repository, number) {
-  const pullRequest = gh([
-    "pr",
-    "view",
-    number,
-    "--repo",
-    repository,
-    "--json",
-    "state,headRefOid",
-  ]);
+  const pullRequest = readPullRequest(repository, number);
 
-  if (pullRequest.state !== "OPEN") {
+  if (pullRequest.state !== "open") {
     throw new ReviewError(
-      `Pull request #${number} on ${repository} is ${pullRequest.state.toLowerCase()}. Reviews run only on an open pull request.`,
+      `Pull request #${number} on ${repository} is ${pullRequest.state}. Reviews run only on an open pull request.`,
     );
   }
 
-  return pullRequest.headRefOid;
+  return pullRequest.head;
+}
+
+/**
+ * The pull request's state (`open`, `closed` or `merged`) and head commit.
+ */
+function readPullRequest(repository, number) {
+  const pullRequest = gh(["api", `repos/${repository}/pulls/${number}`]);
+
+  return {
+    state: pullRequest.merged ? "merged" : pullRequest.state,
+    head: pullRequest.head.sha,
+  };
 }
 
 function reviewRequests(repository, labelNames) {
@@ -272,7 +260,7 @@ function reviewRequests(repository, labelNames) {
 }
 
 /**
- * Adds the labels in one edit. A label still on the pull request asks
+ * Adds the labels in one call. A label still on the pull request asks
  * for nothing when added again, so it comes off first. The comments and
  * checks that exist before the edit belong to earlier requests, so the
  * wait never takes them for this request's answer.
@@ -293,44 +281,21 @@ function requestReviews(repository, number, head, requests) {
     );
   }
 
-  const onPullRequest = new Set(
-    gh([
-      "pr",
-      "view",
-      number,
-      "--repo",
-      repository,
-      "--json",
-      "labels",
-    ]).labels.map(({ name }) => name),
-  );
+  const labels = `repos/${repository}/issues/${number}/labels`;
+  const onPullRequest = new Set(ghList(labels).map(({ name }) => name));
   const stale = requests.filter(({ label }) => onPullRequest.has(label));
 
-  if (stale.length > 0) {
-    gh(
-      [
-        "pr",
-        "edit",
-        number,
-        "--repo",
-        repository,
-        ...stale.flatMap(({ label }) => ["--remove-label", label]),
-      ],
-      { json: false },
-    );
+  for (const { label } of stale) {
+    gh(["api", "-X", "DELETE", `${labels}/${encodeURIComponent(label)}`]);
   }
 
-  gh(
-    [
-      "pr",
-      "edit",
-      number,
-      "--repo",
-      repository,
-      ...requests.flatMap(({ label }) => ["--add-label", label]),
-    ],
-    { json: false },
-  );
+  gh([
+    "api",
+    "-X",
+    "POST",
+    labels,
+    ...requests.flatMap(({ label }) => ["-f", `labels[]=${label}`]),
+  ]);
 
   for (const request of requests) {
     request.attempts++;

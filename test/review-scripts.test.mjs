@@ -85,9 +85,13 @@ function ghCalls() {
     : [];
 }
 
-function edits() {
+function labelWrites() {
   return ghCalls().filter(
-    ([command, subcommand]) => command === "pr" && subcommand === "edit",
+    ([command, flag, method, path]) =>
+      command === "api" &&
+      flag === "-X" &&
+      ["POST", "DELETE"].includes(method) &&
+      path.startsWith("repos/acme/shop/issues/7/labels"),
   );
 }
 
@@ -248,17 +252,16 @@ describe("ship-it-review-run.mjs", () => {
       ],
     );
     assert.match(output.reviews[0].review_url, /pullrequestreview-/);
-    assert.deepEqual(edits(), [
+    assert.deepEqual(labelWrites(), [
       [
-        "pr",
-        "edit",
-        "7",
-        "--repo",
-        "acme/shop",
-        "--add-label",
-        "reviewbot-review:code-review",
-        "--add-label",
-        "reviewbot-review:simplify",
+        "api",
+        "-X",
+        "POST",
+        "repos/acme/shop/issues/7/labels",
+        "-f",
+        "labels[]=reviewbot-review:code-review",
+        "-f",
+        "labels[]=reviewbot-review:simplify",
       ],
     ]);
   });
@@ -280,7 +283,7 @@ describe("ship-it-review-run.mjs", () => {
     assert.equal(output.reviews[0].status, "posted");
     assert.equal(output.reviews[0].attempts, 0);
     assert.equal(output.reviews[0].review_id, 1);
-    assert.deepEqual(edits(), []);
+    assert.deepEqual(labelWrites(), []);
   });
 
   test("asks again when the posted review covers an older head", async () => {
@@ -351,7 +354,7 @@ describe("ship-it-review-run.mjs", () => {
 
     assert.equal(output.reviews[0].status, "posted");
     assert.equal(output.reviews[0].attempts, 2);
-    assert.equal(edits().length, 2);
+    assert.equal(labelWrites().length, 2);
   });
 
   test("reports no review after the retries run out", async () => {
@@ -415,10 +418,18 @@ describe("ship-it-review-run.mjs", () => {
 
     assert.equal(output.reviews[0].status, "posted");
     assert.deepEqual(
-      edits().map((call) => call.slice(5)),
+      labelWrites().map((call) => call.slice(2)),
       [
-        ["--remove-label", "reviewbot-review:simplify"],
-        ["--add-label", "reviewbot-review:simplify"],
+        [
+          "DELETE",
+          "repos/acme/shop/issues/7/labels/reviewbot-review%3Asimplify",
+        ],
+        [
+          "POST",
+          "repos/acme/shop/issues/7/labels",
+          "-f",
+          "labels[]=reviewbot-review:simplify",
+        ],
       ],
     );
   });
@@ -435,10 +446,32 @@ describe("ship-it-review-run.mjs", () => {
     assert.equal(result.code, 0, result.stderr);
     assert.equal(JSON.parse(result.stdout).repository, "acme/shop");
     assert.equal(
-      ghCalls().some(
-        ([command, subcommand]) => command === "repo" && subcommand === "view",
-      ),
+      ghCalls().some((call) => call.includes("repos/{owner}/{repo}")),
       false,
+    );
+  });
+
+  test("calls only the REST API, which sessions that refuse GraphQL still serve", async () => {
+    writeState({
+      pr: {
+        number: 7,
+        state: "OPEN",
+        headRefOid: HEAD,
+        labels: [{ name: "reviewbot-review:simplify" }],
+      },
+      outcomes: { "reviewbot-review:simplify": [{ review: {} }] },
+    });
+
+    const result = await runScript("ship-it-review-run.mjs", [
+      "7",
+      "reviewbot-review:simplify",
+      ...FAST,
+    ]);
+
+    assert.equal(result.code, 0, result.stderr);
+    assert.deepEqual(
+      [...new Set(ghCalls().map(([command]) => command))],
+      ["api"],
     );
   });
 
@@ -454,7 +487,7 @@ describe("ship-it-review-run.mjs", () => {
 
     assert.equal(result.code, 1);
     assert.match(result.stderr, /Pull request #7 on acme\/shop is merged/);
-    assert.deepEqual(edits(), []);
+    assert.deepEqual(labelWrites(), []);
   });
 
   test("refuses a label the repository does not have", async () => {

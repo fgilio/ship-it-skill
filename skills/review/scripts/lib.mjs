@@ -2,7 +2,9 @@
  * Shared runtime for the review scripts.
  *
  * Every GitHub call goes through gh(), so argument passing, JSON
- * parsing, and failure messages stay in one place.
+ * parsing, and failure messages stay in one place. The calls use the
+ * REST API only (`gh api`), since some sessions block GitHub's GraphQL
+ * API, which `gh pr` and `gh repo` call.
  */
 
 import { spawnSync } from "node:child_process";
@@ -162,9 +164,7 @@ export function ghList(path) {
 export function resolveRepository(repositoryFlag, pullRequestArgument) {
   const fromUrl = pullRequestArgument?.match(PULL_REQUEST_URL)?.[1];
   const repository =
-    repositoryFlag ??
-    fromUrl ??
-    gh(["repo", "view", "--json", "nameWithOwner"]).nameWithOwner;
+    repositoryFlag ?? fromUrl ?? gh(["api", "repos/{owner}/{repo}"]).full_name;
 
   if (!REPOSITORY.test(repository)) {
     throw new ReviewError(
