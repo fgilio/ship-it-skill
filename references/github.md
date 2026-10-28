@@ -3,12 +3,12 @@
 ship-it reaches GitHub through the GitHub CLI (`gh`), or through the GitHub MCP server's tools in a session where `gh` does not work. Pick once per session, before the first GitHub call:
 
 1. **gh** when `gh api repos/<owner>/<repo> --jq .full_name` prints the repository. Unlike `gh auth status`, this call also fails for a token that cannot reach this repository (an organization's SSO, a token scoped to other repositories).
-2. **MCP** when the session has the GitHub MCP tools (`mcp__github__*`, or the same tool names under the prefix of the session's GitHub server; load them with ToolSearch when they are deferred) and `get_me` answers with the user's own login. A bot login cannot run review rounds, since services refuse labels a bot adds.
+2. **MCP** when the session has the GitHub MCP tools (`mcp__github__*`, or the same tool names under the prefix of the session's GitHub server; load them with ToolSearch when they are deferred) and `get_me` answers with the user's own login. A bot login cannot run review rounds, since services refuse labels a bot adds. A skill that watches CI or a deploy also needs the Actions tools (`actions_list`, `actions_get`, `get_job_logs`, `actions_run_trigger`), which the server leaves out unless its `actions` toolset is on. Without them, stop before the first write and say so.
 3. **Neither**: stop and say what would fix it: `gh auth login`, or connecting the GitHub MCP server.
 
 When both work, use gh: the review scripts and every watch run on it as background commands, which wait without spending a turn on each check.
 
-`<owner>` and `<repo>` are the last two path segments of `git remote get-url origin`, without `.git`. A remote behind a proxy (`http://proxy@127.0.0.1:8080/git/<owner>/<repo>`) keeps them there too.
+`<owner>` and `<repo>` are the last two parts of `git remote get-url origin` split on `/` and `:`, without `.git`. That covers an SSH remote (`git@github.com:<owner>/<repo>.git`) and one behind a proxy (`http://proxy@127.0.0.1:8080/git/<owner>/<repo>`).
 
 ## Equivalents
 
@@ -38,7 +38,7 @@ The skills write each GitHub call as a `gh` command. With MCP, make the call in 
 | The latest runs of a branch | `gh run list --branch <branch> --limit 3` | `actions_list` `list_workflow_runs` with the branch, `perPage: 3` |
 | Merge | `gh pr merge <number> --<method> --match-head-commit <sha>` | `merge_pull_request` with `merge_method` and `expectedHeadSha` |
 | Auto-merge | `gh pr merge <number> --auto --<method> --match-head-commit <sha>` | `enable_pr_auto_merge` with `mergeMethod`. It takes no head, so read the head again right after: when it moved, `disable_pr_auto_merge`. A PR already mergeable refuses auto-merge, so merge it with `merge_pull_request` |
-| The merge commit | `gh pr view <number> --json mergeCommit` | `list_commits` on the base branch with `since` set to the PR's `merged_at`: the commit whose message names `#<number>`, or the PR's last commit for a rebase merge |
+| The merge commit | `gh pr view <number> --json mergeCommit` | `list_commits` on the base branch with `since` set to the PR's `merged_at`: the commit whose message names `#<number>`. A rebase merge writes new SHAs and names no number, so there it is the newest commit whose message matches the PR's last commit |
 
 ## What MCP cannot do
 
