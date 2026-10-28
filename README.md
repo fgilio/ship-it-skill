@@ -74,7 +74,7 @@ With [bonsai](https://github.com/publicala/claude-plugins/tree/main/plugins/bons
 ## Layout
 
 - `skills/<verb>/SKILL.md`: one skill per verb
-- `skills/review/scripts/`: the review service scripts
+- `skills/review/scripts/`: the review service scripts, and `skills/review/without-gh.md`: their protocol by hand, for sessions without `gh`
 - `references/`: guidance the skills share: GitHub access through `gh` or MCP, commit and push, watching CI, proof, merge modes, escalation
 - `evals/<verb>/PLAN.md`: eval plans per skill
 - `test/`: tests for the scripts, against a fake `gh` (`node --test 'test/*.test.mjs'`)

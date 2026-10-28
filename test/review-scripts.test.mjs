@@ -655,6 +655,6 @@ describe("ship-it-review-run.mjs", () => {
 
     assert.equal(result.code, 1);
     assert.match(result.stderr, /Unable to find the gh executable/);
-    assert.match(result.stderr, /Without gh steps of skills\/review\/SKILL.md/);
+    assert.match(result.stderr, /skills\/review\/without-gh\.md/);
   });
 });
