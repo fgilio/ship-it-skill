@@ -1,9 +1,9 @@
 # GitHub access
 
-ship-it reaches GitHub through the GitHub CLI (`gh`), or through the GitHub MCP server's tools in a session where `gh` does not work. Pick once per session, before the first GitHub call:
+ship-it reaches GitHub through the GitHub CLI (`gh`), or through the GitHub MCP server's tools in a session where `gh` does not work. Either one must act as the user, since review services refuse labels a bot adds. Pick once per session, before the first GitHub call:
 
-1. **gh** when `gh api repos/<owner>/<repo> --jq .full_name` prints the repository. Unlike `gh auth status`, this call also fails for a token that cannot reach this repository (an organization's SSO, a token scoped to other repositories).
-2. **MCP** when the session has the GitHub MCP tools (`mcp__github__*`, or the same tool names under the prefix of the session's GitHub server; load them with ToolSearch when they are deferred) and `get_me` answers with the user's own login. A bot login cannot run review rounds, since services refuse labels a bot adds. A skill that watches CI or a deploy also needs the Actions tools (`actions_list`, `actions_get`, `get_job_logs`, `actions_run_trigger`), which the server leaves out unless its `actions` toolset is on. Without them, stop before the first write and say so.
+1. **gh** when `gh api repos/<owner>/<repo> --jq .full_name` prints the repository and `gh api user --jq .login` prints the user's login. Unlike `gh auth status`, the first call also fails for a token that cannot reach this repository (an organization's SSO, a token scoped to other repositories).
+2. **MCP** when the session has the GitHub MCP tools (`mcp__github__*`, or the same tool names under the prefix of the session's GitHub server; load them with ToolSearch when they are deferred) and `get_me` answers with the user's login. A skill that watches CI or a deploy also needs the Actions tools (`actions_list`, `actions_get`, `get_job_logs`, `actions_run_trigger`), which the server leaves out unless its `actions` toolset is on. Without them, stop before the first write and say so.
 3. **Neither**: stop and say what would fix it: `gh auth login`, or connecting the GitHub MCP server.
 
 When both work, use gh: the review scripts and every watch run on it as background commands, which wait without spending a turn on each check.
@@ -21,10 +21,10 @@ The skills write each GitHub call as a `gh` command. With MCP, make the call in 
 | Create a PR | `gh pr create --base <base> --title <title> --body-file <file>` | `create_pull_request` with the body as text, and `draft: true` for `--draft` |
 | Update a PR's description | `gh pr edit <number> --body-file <file>` | `update_pull_request` with `body` |
 | Mark a PR ready | `gh pr ready <number>` | `update_pull_request` with `draft: false` |
-| Review threads | `gh api graphql` with `reviewThreads` | `pull_request_read` `get_review_comments`: each thread's `id`, `isResolved`, `isOutdated` and comments. Page with `after` |
-| Reviews | `gh api repos/<owner>/<repo>/pulls/<number>/reviews` | `pull_request_read` `get_reviews` |
-| PR comments | `gh api repos/<owner>/<repo>/issues/<number>/comments` | `pull_request_read` `get_comments` |
-| Reply on a thread | `gh api .../pulls/<number>/comments -F in_reply_to=<databaseId>` | `add_reply_to_pull_request_comment` with the first comment's id |
+| Review threads | `gh api graphql` with `reviewThreads` | `pull_request_read` `get_review_comments`: each thread's `id`, `is_resolved`, `is_outdated` and comments. Page with `after` |
+| Reviews | `gh api repos/<owner>/<repo>/pulls/<number>/reviews` | `pull_request_read` `get_reviews`, paged with `page` and `perPage` until a page comes back short |
+| PR comments | `gh api repos/<owner>/<repo>/issues/<number>/comments` | `pull_request_read` `get_comments`, paged the same way |
+| Reply on a thread | `gh api .../pulls/<number>/comments -F in_reply_to=<databaseId>` | `add_reply_to_pull_request_comment` with the number that ends the first comment's `html_url` (`#discussion_r<number>`), since the thread lists no comment id |
 | Comment on a PR | `gh pr comment <number> --body-file <file>` | `add_issue_comment` |
 | Resolve a thread | `gh api graphql` with `resolveReviewThread` | `resolve_review_thread` with the thread `id` |
 | Add or remove labels | `gh pr edit <number> --add-label <label>` / `--remove-label <label>` | `issue_write` `update` with `labels`, which replaces the whole set: send the labels just read, with the change |
@@ -38,7 +38,7 @@ The skills write each GitHub call as a `gh` command. With MCP, make the call in 
 | The latest runs of a branch | `gh run list --branch <branch> --limit 3` | `actions_list` `list_workflow_runs` with the branch, `perPage: 3` |
 | Merge | `gh pr merge <number> --<method> --match-head-commit <sha>` | `merge_pull_request` with `merge_method` and `expectedHeadSha` |
 | Auto-merge | `gh pr merge <number> --auto --<method> --match-head-commit <sha>` | `enable_pr_auto_merge` with `mergeMethod`. It takes no head, so read the head again right after: when it moved, `disable_pr_auto_merge`. A PR already mergeable refuses auto-merge, so merge it with `merge_pull_request` |
-| The merge commit | `gh pr view <number> --json mergeCommit` | `list_commits` on the base branch with `since` set to the PR's `merged_at`: the commit whose message names `#<number>`. A rebase merge writes new SHAs and names no number, so there it is the newest commit whose message matches the PR's last commit |
+| The merge commit | `gh pr view <number> --json mergeCommit` | The `sha` that `merge_pull_request` returns. When GitHub merged the PR later (auto-merge, a merge queue), `list_commits` on the base branch with `since` set to the PR's `merged_at`: the commit whose message names `#<number>`, or for a rebase merge, which writes new SHAs and names no number, the newest commit whose message matches the PR's last commit. When none matches, ask instead of guessing |
 
 ## What MCP cannot do
 
@@ -55,5 +55,5 @@ A `gh` watch waits as one background command. An MCP call returns at once, so a 
 
 - **Events first.** When the harness can subscribe the session to the PR's activity (such as `subscribe_pr_activity`), subscribe and act on each event: a review, a comment, a finished check. Keep one timer for the wait's limit.
 - **Otherwise a timer, then one read.** Start a background `sleep` command, or use the harness's wake-up tool, and read once when it ends: every 60 seconds for CI and deploys, every 2 minutes for reviews.
-- **Read the cheapest call that can show a change.** For a review, the head's check runs: read the reviews when the check named after the label completes, or when an event announces a review.
+- **Read the cheapest calls that can show a change.** For a review, the PR's head and state, the head's check runs, and the PR's comments, since a refusal comes as a comment with no check: read the reviews when the check named after the label completes, or when an event announces a review.
 - The limits stay the ones the skills set: 30 minutes per review request, an hour for a merge. Between reads, work on something that does not touch the PR's branch.
