@@ -1,12 +1,12 @@
-# GitHub access
+# GitHub through MCP
 
-ship-it reaches GitHub through the GitHub CLI (`gh`), or through the GitHub MCP server's tools in a session where `gh` does not work. Either one must act as the user, since review services refuse labels a bot adds. Pick once per session, before the first GitHub call:
+Read this when `gh api repos/{owner}/{repo}` fails. ship-it then reaches GitHub through the GitHub MCP server's tools, once the session checks three things:
 
-1. **gh** when `gh api repos/<owner>/<repo> --jq .full_name` prints the repository and `gh api user --jq .login` prints the user's login. Unlike `gh auth status`, the first call also fails for a token that cannot reach this repository (an organization's SSO, a token scoped to other repositories).
-2. **MCP** when the session has the GitHub MCP tools (`mcp__github__*`, or the same tool names under the prefix of the session's GitHub server; load them with ToolSearch when they are deferred) and `get_me` answers with the user's login. A skill that watches CI or a deploy also needs the Actions tools (`actions_list`, `actions_get`, `get_job_logs`, `actions_run_trigger`), which the server leaves out unless its `actions` toolset is on. Without them, stop before the first write and say so.
-3. **Neither**: stop and say what would fix it: `gh auth login`, or connecting the GitHub MCP server.
+- It has them (`mcp__github__*`, or the same tool names under the prefix of the session's GitHub server). Deferred tools load with ToolSearch.
+- `get_me` answers with the user's login, since review services refuse labels a bot adds.
+- A skill that watches CI or a deploy also has the Actions tools (`actions_list`, `actions_get`, `get_job_logs`, `actions_run_trigger`), which the server leaves out unless its `actions` toolset is on.
 
-When both work, use gh: the review scripts and every watch run on it as background commands, which wait without spending a turn on each check.
+When a check fails, stop before the first write and say what would fix it: `gh auth login`, or connecting the GitHub MCP server with the tools it lacks.
 
 `<owner>` and `<repo>` are the last two parts of `git remote get-url origin` split on `/` and `:`, without `.git`. That covers an SSH remote (`git@github.com:<owner>/<repo>.git`) and one behind a proxy (`http://proxy@127.0.0.1:8080/git/<owner>/<repo>`).
 
@@ -22,7 +22,7 @@ The skills write each GitHub call as a `gh` command. With MCP, use the tool that
 | PR comments | `gh api repos/<owner>/<repo>/issues/<number>/comments` | `pull_request_read` `get_comments`, paged the same way |
 | Reply on a thread | `gh api .../pulls/<number>/comments -F in_reply_to=<databaseId>` | `add_reply_to_pull_request_comment` with the number that ends the first comment's `html_url` (`#discussion_r<number>`), since the thread lists no comment id |
 | Add or remove labels | `gh pr edit <number> --add-label <label>` / `--remove-label <label>` | `issue_write` `update` with `labels`, which replaces the whole set: send the labels just read, with the change |
-| A repository's labels | `gh api repos/<owner>/<repo>/labels` | `list_label` when the session has it. Otherwise `get_label` for each name, as the review skill's "Without gh" finds them |
+| A repository's labels | `gh api repos/<owner>/<repo>/labels` | `list_label` when the session has it. Otherwise `get_label` for each name, as `skills/review/without-gh.md` finds them |
 | A commit's Actions runs | `gh run list --commit <sha>` | `actions_list` `list_workflow_runs` with the branch in `workflow_runs_filter`, keeping the runs whose `head_sha` is the commit |
 | The merge commit | `gh pr view <number> --json mergeCommit` | The `sha` that `merge_pull_request` returns. When GitHub merged the PR later (auto-merge, a merge queue), the earliest commit from `list_commits` on the base branch, with `since` set to the PR's `merged_at`, whose first line ends with `(#<number>)` or starts with `Merge pull request #<number>`, as GitHub writes them. A rebase merge writes neither, so ask for the SHA instead of guessing |
 

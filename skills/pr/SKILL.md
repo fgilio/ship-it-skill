@@ -9,7 +9,7 @@ argument-hint: "[--base <branch>] [--draft]"
 
 # Open a pull request
 
-GitHub calls go through `gh` or the GitHub MCP tools, whichever `${CLAUDE_SKILL_DIR}/../../references/github.md` picks: read it before the first GitHub call.
+GitHub calls below use `gh`. When `gh api repos/{owner}/{repo}` fails (no `gh`, logged out, or no access to this repository), read `${CLAUDE_SKILL_DIR}/../../references/github.md` before the next GitHub call.
 
 1. **Commit and push.** Follow `${CLAUDE_SKILL_DIR}/../../references/commit-push.md`.
 2. **Find an open PR.** When the branch already has one (`gh pr view --json number,url,state,body`), bring its description up to date with the branch, report its URL, and go to step 5.

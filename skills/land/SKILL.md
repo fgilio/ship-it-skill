@@ -15,7 +15,7 @@ The aim is to deploy as often as possible: small PRs, each merged and deployed o
 
 To follow another ship-it skill, read `${CLAUDE_SKILL_DIR}/../<name>/SKILL.md`. Inside that file, `${CLAUDE_SKILL_DIR}` means `${CLAUDE_SKILL_DIR}/../<name>`, and `$ARGUMENTS` means the arguments land passes. References live in `${CLAUDE_SKILL_DIR}/../../references/`.
 
-GitHub calls go through `gh` or the GitHub MCP tools, whichever `${CLAUDE_SKILL_DIR}/../../references/github.md` picks: read it before the first GitHub call.
+GitHub calls below use `gh`. When `gh api repos/{owner}/{repo}` fails (no `gh`, logged out, or no access to this repository), read `${CLAUDE_SKILL_DIR}/../../references/github.md` before the next GitHub call.
 
 ## 0. Continue
 
