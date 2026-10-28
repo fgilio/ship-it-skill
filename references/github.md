@@ -37,5 +37,5 @@ A `gh` watch waits as one background command. An MCP call returns at once, so a 
 
 - **Events first.** When the harness can subscribe the session to the PR's activity (such as `subscribe_pr_activity`), subscribe and act on each event: a review, a comment, a finished check. Keep one timer for the wait's limit.
 - **Otherwise a timer, then one read.** Start a background `sleep` command, or use the harness's wake-up tool, and read once when it ends: every 60 seconds for CI and deploys, every 2 minutes for reviews.
-- **Read the cheapest calls that can show a change.** For a review, the PR's head and state, the head's check runs, and the PR's comments, since a refusal comes as a comment with no check: read the reviews when the check named after the label completes, or when an event announces a review.
+- **Read the cheapest calls that can show a change.** For a review, the PR's head and state, the head's check runs (`get_check_runs`), and the PR's comments, since a refusal comes as a comment with no check: read the reviews when the check named after the label completes, or when an event announces a review.
 - The limits stay the ones the skills set. Between reads, work on something that does not touch the PR's branch.
