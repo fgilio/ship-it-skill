@@ -87,6 +87,32 @@ function play() {
   }
 }
 
+function answerIssueLabels(method, path) {
+  if (method === "DELETE") {
+    const label = decodeURIComponent(path.split("/labels/")[1]);
+
+    state.pr.labels = state.pr.labels.filter(({ name }) => name !== label);
+
+    return respond(state.pr.labels);
+  }
+
+  if (method === "POST") {
+    for (const field of values("-f")) {
+      const label = field.slice("labels[]=".length);
+
+      state.pr.labels.push({ name: label });
+      state.requests[label] = {
+        count: (state.requests[label]?.count ?? 0) + 1,
+        atPoll: state.polls,
+      };
+    }
+
+    return respond(state.pr.labels);
+  }
+
+  return respond([state.pr.labels]);
+}
+
 function completeCheck(label, conclusion, title) {
   state.checkRuns.push({
     id: 3000 + state.checkRuns.length,
@@ -102,42 +128,33 @@ function completeCheck(label, conclusion, title) {
 function answer() {
   const [command, subcommand] = args;
 
-  if (command === "repo" && subcommand === "view") {
-    return respond({ nameWithOwner: state.repo });
-  }
+  // Claude Code on the web refuses GraphQL, which gh pr and gh repo call
+  if (command === "pr" || command === "repo" || subcommand === "graphql") {
+    process.stderr.write("HTTP 403: GitHub GraphQL is not available\n");
+    process.exitCode = 1;
 
-  if (command === "label" && subcommand === "list") {
-    return respond(state.labels);
-  }
-
-  if (command === "pr" && subcommand === "view") {
-    const fields = option("--json").split(",");
-
-    return respond(
-      Object.fromEntries(fields.map((field) => [field, state.pr[field]])),
-    );
-  }
-
-  if (command === "pr" && subcommand === "edit") {
-    for (const label of values("--remove-label")) {
-      state.pr.labels = state.pr.labels.filter(({ name }) => name !== label);
-    }
-
-    for (const label of values("--add-label")) {
-      state.pr.labels.push({ name: label });
-      state.requests[label] = {
-        count: (state.requests[label]?.count ?? 0) + 1,
-        atPoll: state.polls,
-      };
-    }
-
-    return process.stdout.write(
-      `https://github.com/${state.repo}/pull/${state.pr.number}\n`,
-    );
+    return;
   }
 
   if (command === "api") {
+    const method = args.includes("-X") ? option("-X") : "GET";
     const path = args.find((argument) => argument.startsWith("repos/"));
+
+    if (path === "repos/{owner}/{repo}") {
+      return respond({ full_name: state.repo });
+    }
+
+    if (path.endsWith(`/pulls/${state.pr.number}`)) {
+      return respond({
+        state: state.pr.state === "OPEN" ? "open" : "closed",
+        merged: state.pr.state === "MERGED",
+        head: { sha: state.pr.headRefOid },
+      });
+    }
+
+    if (path.includes("/issues/") && path.includes("/labels")) {
+      return answerIssueLabels(method, path);
+    }
 
     if (path.includes("/labels")) {
       return respond(state.labelPages ?? [state.labels]);
