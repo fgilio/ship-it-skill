@@ -38,7 +38,7 @@ The skills write each GitHub call as a `gh` command. With MCP, make the call in 
 | The latest runs of a branch | `gh run list --branch <branch> --limit 3` | `actions_list` `list_workflow_runs` with the branch, `perPage: 3` |
 | Merge | `gh pr merge <number> --<method> --match-head-commit <sha>` | `merge_pull_request` with `merge_method` and `expectedHeadSha` |
 | Auto-merge | `gh pr merge <number> --auto --<method> --match-head-commit <sha>` | `enable_pr_auto_merge` with `mergeMethod`. It takes no head, so read the head again right after: when it moved, `disable_pr_auto_merge`. A PR already mergeable refuses auto-merge, so merge it with `merge_pull_request` |
-| The merge commit | `gh pr view <number> --json mergeCommit` | The `sha` that `merge_pull_request` returns. When GitHub merged the PR later (auto-merge, a merge queue), `list_commits` on the base branch with `since` set to the PR's `merged_at`: the commit whose message names `#<number>`, or for a rebase merge, which writes new SHAs and names no number, the newest commit whose message matches the PR's last commit. When none matches, ask instead of guessing |
+| The merge commit | `gh pr view <number> --json mergeCommit` | The `sha` that `merge_pull_request` returns. When GitHub merged the PR later (auto-merge, a merge queue), the earliest commit from `list_commits` on the base branch, with `since` set to the PR's `merged_at`, whose first line ends with `(#<number>)` or starts with `Merge pull request #<number>`, as GitHub writes them. A rebase merge writes neither, so ask for the SHA instead of guessing |
 
 ## What MCP cannot do
 
