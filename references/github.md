@@ -29,11 +29,8 @@ The skills write each GitHub call as a `gh` command. With MCP, use the tool that
 ## What MCP cannot do
 
 - **The user's merge method** (`viewerDefaultMergeMethod`): read it from the base branch's history (`list_commits`). Commits titled `Merge pull request #<number>` mean `merge`, one commit per PR ending in `(#<number>)` means `squash`, and anything else means `rebase`. When the history mixes them, ask once.
-- **Approving a deploy gate** (`pending_deployments`): no tool reads or approves one. A run whose `status` is `waiting` is escalated as blocked with the run's URL, so the user approves it, and the watch goes on after.
-- **GitHub deployments of a commit**: no tool lists them, so deploy finds the deploy from its second source on.
 - **Reverting a PR** (`revertPullRequest`): revert by hand, as verify does when GitHub cannot build the revert.
 - **The checks a merge requires** (`gh pr checks --required`): MCP does not say which are required. Watch every check on the head except the ones named after a review label (`<service>-review:<kind>`), so an optional check that fails holds the watch too: fix it, or report it as outside the change.
-- **Check runs of a commit without a PR**: only the repository's own Actions runs are readable. A run whose workflow lives outside the repository goes unread: say so.
 
 ## Waiting
 
