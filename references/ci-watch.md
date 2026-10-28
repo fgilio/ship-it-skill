@@ -12,7 +12,7 @@ The commands below are `gh`'s. When `gh api repos/{owner}/{repo}` fails, read `g
   gh run watch <run id> --exit-status --compact
   ```
 
-  `gh run watch` answers 404 for a run whose workflow lives outside the repository, whatever the run's result. Read that run's result from the commit's check runs instead: `gh api repos/<owner>/<repo>/commits/<sha>/check-runs`.
+  `gh run watch` answers 404 for a run whose workflow lives outside the repository, whatever the run's result. Read that run's result from the commit's check runs instead: `gh api 'repos/{owner}/{repo}/commits/<sha>/check-runs' --paginate`.
 
 A watch can outlast a command's time limit, so start it as a background command when the harness offers one, and act when it ends. Runs take a few seconds to register after a push. A commit with no check a minute after the push has nothing to watch: say so.
 

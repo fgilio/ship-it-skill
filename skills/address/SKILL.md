@@ -19,30 +19,28 @@ Resolve them in this order:
 
 1. The PR numbers or URLs in `$ARGUMENTS`.
 2. The PRs created or discussed earlier in this conversation.
-3. The open PR of the current branch: `gh pr view --json number,url,title`.
+3. The open PR of the current branch: `gh api 'repos/{owner}/{repo}/pulls?head={owner}:{branch}&state=open'`.
 4. When none of these yields a PR, ask which ones with AskUserQuestion.
 
 Run everything below for each PR.
 
 ## Gather the findings
 
-Get `<owner>` and `<repo>` from `gh repo view --json owner,name`.
-
-Thread resolution is in GraphQL only, since `gh pr view` does not expose it. Fetch every thread:
+Thread resolution is in GraphQL only. Fetch every thread:
 
 ```bash
 gh api graphql \
   -f query='query($owner:String!,$repo:String!,$pr:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$pr){reviewThreads(first:100){pageInfo{hasNextPage endCursor}nodes{id isResolved isOutdated path line comments(first:50){nodes{databaseId author{login} body url}}}}}}}' \
-  -f owner=<owner> -f repo=<repo> -F pr=<number>
+  -F owner='{owner}' -F repo='{repo}' -F pr=<number>
 ```
 
 Keep two ids per thread: the thread `id` to resolve it, and the first comment's `databaseId` to reply. Skip resolved threads. An outdated thread still needs a reply. When `hasNextPage` is true, run the query again with an added `$after:String` variable, `reviewThreads(first:100, after:$after)`, and `-f after=<endCursor>`.
 
-Then read the reviews and comments outside the threads, with the URL of each (`gh pr view` gives none for a review):
+Then read the reviews and comments outside the threads, with the URL of each:
 
 ```bash
-gh api repos/<owner>/<repo>/pulls/<number>/reviews --paginate --jq '.[] | {html_url, user: .user.login, state, body}'
-gh api repos/<owner>/<repo>/issues/<number>/comments --paginate --jq '.[] | {html_url, user: .user.login, body}'
+gh api 'repos/{owner}/{repo}/pulls/<number>/reviews' --paginate --jq '.[] | {html_url, user: .user.login, state, body}'
+gh api 'repos/{owner}/{repo}/issues/<number>/comments' --paginate --jq '.[] | {html_url, user: .user.login, body}'
 ```
 
 A review body often lists findings that have no thread: a summary, or findings on lines outside the diff. Each one is a finding. A body that numbers its items (`M1`, `M2`, … for a checklist, `Q1`, `Q2`, … for questions) holds one finding per number, whose id is the review's `html_url` and the number: every review starts again at `M1`.
@@ -84,9 +82,9 @@ Replies cite commits, so code lands first:
 4. Reply to every finding, citing the fix commit's SHA, and the guardrail PR that covers it when there is one. Write in the user's voice: load the `fgilio-voice` skill when the session has it.
    - A thread (`in_reply_to` takes the first comment's `databaseId`):
      ```bash
-     gh api repos/<owner>/<repo>/pulls/<number>/comments -F in_reply_to=<databaseId> -f body='...'
+     gh api 'repos/{owner}/{repo}/pulls/<number>/comments' -F in_reply_to=<databaseId> -f body='...'
      ```
-   - Findings without a thread: one PR comment that lists each finding with its decision (fixed in `<sha>`, answered with the reason, or the user's call), naming each numbered item by its review and its number (`<review URL> M2: fixed in <sha>`): `gh pr comment <number> --body-file <file>`.
+   - Findings without a thread: one PR comment that lists each finding with its decision (fixed in `<sha>`, answered with the reason, or the user's call), naming each numbered item by its review and its number (`<review URL> M2: fixed in <sha>`): `gh api 'repos/{owner}/{repo}/issues/<number>/comments' -F body=@<file>`.
 5. Resolve each thread whose fix is pushed, or whose reply settles it:
    ```bash
    gh api graphql \
