@@ -19,7 +19,7 @@ Resolve them in this order:
 
 1. The PR numbers or URLs in `$ARGUMENTS`.
 2. The PRs created or discussed earlier in this conversation.
-3. The open PR of the current branch: `gh api 'repos/{owner}/{repo}/pulls?head={owner}:{branch}&state=open'`.
+3. The open PR of the current branch: `gh api -X GET 'repos/{owner}/{repo}/pulls' -F head="{owner}:$(git branch --show-current)" -f state=open`.
 4. When none of these yields a PR, ask which ones with AskUserQuestion.
 
 Run everything below for each PR.
