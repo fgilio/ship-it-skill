@@ -43,7 +43,7 @@ The review skill works with any review service that follows one protocol, and na
 - The answer is a PR review whose body ends with `<!-- <service>-review kind=<kind> sha=<head sha> -->`, or a refusal comment that carries `<!-- <service>-review-refused -->` and names the label.
 - While the review runs, a check run named after the label shows on the head.
 
-`skills/review/scripts/` holds the two scripts that speak it: one lists the tagged labels, the other requests reviews and waits for each answer.
+`skills/review/scripts/` holds the two scripts that speak it: one lists the tagged labels, the other requests reviews and waits for each answer. Without `gh`, the review skill speaks it through the GitHub MCP tools.
 
 ## Merge modes
 
@@ -59,7 +59,7 @@ With [bonsai](https://github.com/publicala/claude-plugins/tree/main/plugins/bons
 
 ## Requirements
 
-- The GitHub CLI (`gh`), logged in as you: review services refuse labels a bot adds.
+- GitHub access as you, since review services refuse labels a bot adds: the GitHub CLI (`gh`) logged in, or the GitHub MCP server. `gh` comes first when both work. With MCP the agent makes each call and each check of a wait itself, so the same work takes more turns ([`references/github.md`](references/github.md)).
 - Node.js 22 or later, for the review scripts.
 - The `code-review` skill that ships with Claude Code, for local reviews when `codex-partner` is missing.
 - Used when the session has them: `codex-partner` (local reviews by a second model), `pr-guidelines` (PR descriptions), `fgilio-voice` (replies), bonsai (guardrails), a Slack tool and a push notification tool (escalation).
@@ -75,7 +75,7 @@ With [bonsai](https://github.com/publicala/claude-plugins/tree/main/plugins/bons
 
 - `skills/<verb>/SKILL.md`: one skill per verb
 - `skills/review/scripts/`: the review service scripts
-- `references/`: guidance the skills share: commit and push, watching CI, proof, merge modes, escalation
+- `references/`: guidance the skills share: GitHub access through `gh` or MCP, commit and push, watching CI, proof, merge modes, escalation
 - `evals/<verb>/PLAN.md`: eval plans per skill
 - `test/`: tests for the scripts, against a fake `gh` (`node --test 'test/*.test.mjs'`)
 

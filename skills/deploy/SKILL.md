@@ -11,6 +11,8 @@ argument-hint: "[<PR number or URL>] [--auto]"
 
 Merging and approving the deploy's gates are the actions this skill exists for, so the user's invocation, or a merge mode the user picked in land, is the permission for both. Every other production change stays outside it.
 
+GitHub calls go through `gh` or the GitHub MCP tools, whichever `${CLAUDE_SKILL_DIR}/../../references/github.md` picks. It maps each `gh` command below to its tool. It also lists what MCP cannot do here, such as approving a gate, and what to do instead.
+
 ## 1. Ready
 
 Read the PR (the one in `$ARGUMENTS`, or the current branch's):

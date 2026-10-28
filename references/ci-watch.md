@@ -2,6 +2,8 @@
 
 Watch the checks of the pushed commit until they end.
 
+The commands below are `gh`'s. In a session that reaches GitHub through MCP, `github.md` maps each one and says how to wait.
+
 - **A PR's head**: `gh pr checks <number> --watch --required`. It waits for the checks the merge needs, including required workflows an organization ruleset adds from outside the repository, and leaves out slow checks nothing waits for, such as a review service's.
 - **A commit without a PR** (the default branch after a merge): its Actions runs.
 
