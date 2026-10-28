@@ -19,7 +19,7 @@ Resolve them in this order:
 
 1. The PR numbers or URLs in `$ARGUMENTS`.
 2. The PRs created or discussed earlier in this conversation.
-3. The open PR of the current branch: `gh api -X GET 'repos/{owner}/{repo}/pulls' -f head="<owner>:$(git branch --show-current)" -f state=open`, with `<owner>` written out as the login of the repository the branch was pushed to.
+3. The open PR of the current branch: `gh api -X GET 'repos/{owner}/{repo}/pulls' -f head="<owner>:$(git branch --show-current)" -f state=open`, with `<owner>` written out as the login of the repository the branch was pushed to, and the upstream repository in the path for a branch on a fork.
 4. When none of these yields a PR, ask which ones with AskUserQuestion.
 
 Run everything below for each PR.
