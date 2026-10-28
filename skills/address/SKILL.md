@@ -11,7 +11,7 @@ argument-hint: "[<PR number or URL>...] [--guard]"
 
 Every finding gets exactly one decision, written on the PR where the next reviewer reads it: **one finding, one decision**. A thread resolved without a reply, or a finding in a review summary that nobody answered, is a decision lost. The next review raises it again, and the next session cannot tell whether anyone weighed it.
 
-GitHub calls go through `gh` or the GitHub MCP tools, whichever `${CLAUDE_SKILL_DIR}/../../references/github.md` picks: read it before the first GitHub call.
+GitHub calls below use `gh`. When `gh api repos/{owner}/{repo}` fails (no `gh`, logged out, or no access to this repository), read `${CLAUDE_SKILL_DIR}/../../references/github.md` before the next GitHub call.
 
 ## Which PRs
 
