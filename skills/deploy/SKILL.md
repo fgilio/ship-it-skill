@@ -34,7 +34,7 @@ Pass the head checked in step 1, so a commit pushed since then cannot merge with
 
 When GitHub refuses because the head moved, the new head goes back through the gates that brought the PR here (for land, the close checklist).
 
-Either command can return before the merge happens: auto-merge waits for checks, and a merge queue waits its turn. Wait as a background command until `gh api 'repos/{owner}/{repo}/pulls/<number>' --jq '[.merged, .merge_commit_sha]'` shows `true` with a merge commit. A PR that closes without merging is escalated as blocked, and one still waiting after an hour is escalated as can wait.
+Either command can return before the merge happens: auto-merge waits for checks, and a merge queue waits its turn. Wait as a background command until `gh api 'repos/{owner}/{repo}/pulls/<number>' --jq '[.state, .merged, .merge_commit_sha]'` shows it merged, with a merge commit. A PR that closes without merging is escalated as blocked, and one still waiting after an hour is escalated as can wait.
 
 Record the merge commit's SHA.
 
