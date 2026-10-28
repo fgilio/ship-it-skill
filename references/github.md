@@ -12,32 +12,18 @@ When both work, use gh: the review scripts and every watch run on it as backgrou
 
 ## Equivalents
 
-The skills write each GitHub call as a `gh` command. With MCP, make the call in this table instead. Tool names leave out the server prefix.
+The skills write each GitHub call as a `gh` command. With MCP, use the tool that does the same. These calls behave differently from `gh`. Tool names leave out the server prefix.
 
 | Call | gh | MCP |
 | --- | --- | --- |
-| The branch's open PR | `gh pr view --json number,url,state,body` | `list_pull_requests` with `head: "<owner>:<branch>"` and `state: "open"` |
 | A PR's state | `gh pr view <number> --json state,isDraft,mergeStateStatus,headRefOid,labels,...` | `pull_request_read` `get`: `state`, `draft`, `merged`, `merged_at`, `mergeable_state` (`clean`, `has_hooks`, `blocked`, `dirty`, `unknown`, ...), `head.sha`, `base.ref`, and `labels` as names, left out when the PR has none. `issue_read` `get_labels` fails on a PR number |
-| Create a PR | `gh pr create --base <base> --title <title> --body-file <file>` | `create_pull_request` with the body as text, and `draft: true` for `--draft` |
-| Update a PR's description | `gh pr edit <number> --body-file <file>` | `update_pull_request` with `body` |
-| Mark a PR ready | `gh pr ready <number>` | `update_pull_request` with `draft: false` |
 | Review threads | `gh api graphql` with `reviewThreads` | `pull_request_read` `get_review_comments`: each thread's `id`, `is_resolved`, `is_outdated` and comments. Page with `after` |
 | Reviews | `gh api repos/<owner>/<repo>/pulls/<number>/reviews` | `pull_request_read` `get_reviews`, paged with `page` and `perPage` until a page comes back short |
 | PR comments | `gh api repos/<owner>/<repo>/issues/<number>/comments` | `pull_request_read` `get_comments`, paged the same way |
 | Reply on a thread | `gh api .../pulls/<number>/comments -F in_reply_to=<databaseId>` | `add_reply_to_pull_request_comment` with the number that ends the first comment's `html_url` (`#discussion_r<number>`), since the thread lists no comment id |
-| Comment on a PR | `gh pr comment <number> --body-file <file>` | `add_issue_comment` |
-| Resolve a thread | `gh api graphql` with `resolveReviewThread` | `resolve_review_thread` with the thread `id` |
 | Add or remove labels | `gh pr edit <number> --add-label <label>` / `--remove-label <label>` | `issue_write` `update` with `labels`, which replaces the whole set: send the labels just read, with the change |
 | A repository's labels | `gh api repos/<owner>/<repo>/labels` | `list_label` when the session has it. Otherwise `get_label` for each name, as the review skill's "Without gh" finds them |
-| A PR head's checks | `gh pr checks <number>` | `pull_request_read` `get_check_runs`, and `get_status` for commit statuses |
 | A commit's Actions runs | `gh run list --commit <sha>` | `actions_list` `list_workflow_runs` with the branch in `workflow_runs_filter`, keeping the runs whose `head_sha` is the commit |
-| A run's result | `gh run watch <run id>` | `actions_get` `get_workflow_run`: `status`, `conclusion`, `html_url` |
-| Failed logs | `gh run view <run id> --log-failed` | `get_job_logs` with `run_id`, `failed_only: true` and `return_content: true` |
-| Re-run failed jobs | `gh run rerun <run id> --failed` | `actions_run_trigger` `rerun_failed_jobs` |
-| Cancel a run | `gh run cancel <run id>` | `actions_run_trigger` `cancel_workflow_run` |
-| The latest runs of a branch | `gh run list --branch <branch> --limit 3` | `actions_list` `list_workflow_runs` with the branch, `perPage: 3` |
-| Merge | `gh pr merge <number> --<method> --match-head-commit <sha>` | `merge_pull_request` with `merge_method` and `expectedHeadSha` |
-| Auto-merge | `gh pr merge <number> --auto --<method> --match-head-commit <sha>` | `enable_pr_auto_merge` with `mergeMethod`. It takes no head, so read the head again right after: when it moved, `disable_pr_auto_merge`. A PR already mergeable refuses auto-merge, so merge it with `merge_pull_request` |
 | The merge commit | `gh pr view <number> --json mergeCommit` | The `sha` that `merge_pull_request` returns. When GitHub merged the PR later (auto-merge, a merge queue), the earliest commit from `list_commits` on the base branch, with `since` set to the PR's `merged_at`, whose first line ends with `(#<number>)` or starts with `Merge pull request #<number>`, as GitHub writes them. A rebase merge writes neither, so ask for the SHA instead of guessing |
 
 ## What MCP cannot do
