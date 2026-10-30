@@ -30,6 +30,7 @@ gate: plan in the session? ── no ──> stop, list what is missing
          └─ merge mode
             ├─ merge-ready: notify, you merge
             └─ merge / auto-merge: deploy → verify
+      └─ guardrails at the end: one guard pass over every PR of the run
 ```
 
 A PR that reaches you carries a proof (what ran, and the evidence) and a reading guide (the files that bear load, and why), so the merge takes a short read.
@@ -55,7 +56,10 @@ The channel follows how much a question blocks. A question that can wait is save
 
 ## Guardrails
 
-With [bonsai](https://github.com/publicala/claude-plugins/tree/main/plugins/bonsai) installed, `address --guard` (or guardrails turned on in land) hands each review round's findings to `/bonsai:guard`, which turns the findings a check could have caught into one guardrail PR each.
+With [bonsai](https://github.com/publicala/claude-plugins/tree/main/plugins/bonsai) installed, `/bonsai:guard` turns the findings a check could have caught into one guardrail PR each. Land runs it in one of two ways:
+
+- **At the end** (`--guard`, recommended): once, after the last PR, over every PR of the run. Guard sees every round of every PR together, so one guardrail covers a mistake that came back across rounds and PRs.
+- **Each round** (`--guard=rounds`): each review round hands its findings to guard, through `address --guard`, so a check can open while the PR is still in review.
 
 ## Requirements
 
