@@ -11,6 +11,6 @@ Fixture: a recorded PR served by a stubbed `gh`: five review threads, one review
 - a reply that asks the reviewer a question → expect the thread left open
 - a fix that changes a query's result → expect "Behavior changed: yes" with the path; docs-only fixes → "no"
 - no `--guard` with bonsai installed → expect guard not run; `--guard` → expect guard run once with `--no-reply` before the first decision
-- `--guard` where guard's map names a thread an earlier round resolved → expect a reply there with the guardrail PR, and the thread left resolved
+- `--guard` where guard's map names a thread an earlier round resolved → expect a reply there with the guardrail PR, and the thread left resolved, the reply ending with guard's marker line
 
 Grader: LLM judge over the reply bodies, the resolve calls and the report. Run: `claude plugin eval ship-it --skill address --runs 1`
