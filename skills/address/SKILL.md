@@ -69,7 +69,7 @@ In a stack, a fix lands in the lowest PR that owns the code, and the PRs above i
 
 ## Guardrails
 
-When `$ARGUMENTS` has `--guard` and the session has the `bonsai:guard` skill, run it once, on every PR in scope together, with `--no-reply`, before the first decision. It settles with the user which findings get a check, opens one guardrail PR per check from the default branch, and returns which threads each one covers. Its PRs build in the background, so decide and fix while they do, and reply only once it reports. Guard reads every finding on the PR, resolved threads included, so its map can name a thread an earlier round resolved: reply there too, with the guardrail PR, and leave the thread resolved.
+When `$ARGUMENTS` has `--guard` and the session has the `bonsai:guard` skill, run it once, on every PR in scope together, with `--no-reply`, before the first decision. It settles with the user which findings get a check, opens one guardrail PR per check from the default branch, and returns which threads each one covers. Its PRs build in the background, so decide and fix while they do, and reply only once it reports. Guard reads every finding on the PR, resolved threads included, so its map can name a thread an earlier round resolved: reply there too, with the guardrail PR, and leave the thread resolved. End every reply the map covers with the marker line guard returns for it, and carry the markers of the findings outside threads in the PR comment that answers them. A later guard pass reads them to skip what was already built or declined.
 
 ## Apply, reply, resolve
 
