@@ -12,7 +12,7 @@ ${CLAUDE_SKILL_DIR}/../../scripts/ship-it-ci-watch.mjs <sha>
 
 The script needs `gh`. When `gh api repos/{owner}/{repo}` fails, read `github.md` and follow its "Watching CI" section instead.
 
-It waits up to 45 minutes, so start it as a background command and act on its output when it ends. For a PR it watches the checks the merge requires, read from the base branch's rulesets (an organization's included) and its branch protection, and when they name none, every check on the head except a review service's and the manual gates. Checks take a few seconds to register after a push, and the script gives them 2 minutes. For a commit it watches every check except a review service's, gates included.
+It waits up to 45 minutes, so start it as a background command and act on its output when it ends. For a PR it watches the checks the merge requires, read from the base branch's rulesets (an organization's included) and its branch protection: the required status checks, pinned to their app when the rule names one, and the jobs of the required workflows. When they name none, it watches every check on the head except a review service's and the manual gates. A check registers once its job is queued, which for a job that needs others happens when they finish, so the script waits while anything runs and gives a quiet commit 2 minutes. For a commit it watches every check except a review service's, gates included.
 
 | Result | Meaning | Next |
 | --- | --- | --- |
@@ -26,7 +26,7 @@ It waits up to 45 minutes, so start it as a background command and act on its ou
 
 ## Manual gates
 
-A job that waits for an environment's approval is a manual gate, never CI. The script lists every gate it meets in `gates`: the run, its environment, whether the user can approve it (`can_approve`), the jobs that wait and the jobs the gate holds back. It waits for a gate only when the merge requires it, or on a commit's watch, where the run cannot end without it.
+A job that waits for an environment's reviewers is a manual gate, never CI. The script lists every gate it meets in `gates`: the run, its environment, whether the user can approve it (`can_approve`), the jobs that wait and the jobs the gate holds back. It waits for a gate only when the merge requires it, or on a commit's watch, where the run cannot end without it. An environment's wait timer is not a gate: the job goes on by itself, and the watch waits through it.
 
 The report names each gate with its environment and URL, approved or not. Approving one has effects beyond CI (a deploy to that environment), so it takes the user's permission:
 
