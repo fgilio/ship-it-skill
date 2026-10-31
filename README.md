@@ -12,7 +12,7 @@ A Claude Code plugin that ships a change: focused commits, the push, GitHub Acti
 | `/ship-it:deploy` | Merge, watch the deploy until it is live, and approve its manual gates |
 | `/ship-it:verify` | Compare production after the deploy with production before it, now and two hours later |
 
-Claude starts a skill only when you name it: as a command, or anywhere in a message (`use /ship-it:land`), even one sent while Claude is busy. `/ship-it:deploy` and `/ship-it:ship-it` start only as a command at the start of a message sent while Claude is idle, because either one can merge and approve a deploy's gates.
+Claude starts a skill when you name it: as a command, or anywhere in a message (`use /ship-it:land`), even one sent while Claude is busy. Each description tells Claude to start the skill only when you name it. Claude follows that as an instruction and nothing enforces it, so a vague "ship it" can still start land, which asks for the merge mode before it writes code. `/ship-it:deploy` and `/ship-it:ship-it` keep `disable-model-invocation`, which Claude Code enforces: they start only from a command at the start of a message sent while Claude is idle, because either one can merge and approve a deploy's gates.
 
 ## Land
 
