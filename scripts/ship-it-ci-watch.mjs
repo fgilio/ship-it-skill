@@ -72,6 +72,7 @@ class Watch {
   runs = new Map();
   gates = new Map();
   runsWaitingForReviewers = new Set();
+  runIdsWithChecks = new Set();
 
   constructor(repository, subject) {
     this.repository = repository;
@@ -105,6 +106,9 @@ class Watch {
       check.workflow_path = this.runs.get(check.run_id)?.path ?? null;
     }
 
+    this.runIdsWithChecks = new Set(
+      found.map(({ run_id }) => run_id).filter(Boolean),
+    );
     this.checks = latestOfEach(found);
     this.runsWaitingForReviewers = new Set();
 
@@ -210,12 +214,17 @@ class Watch {
 
   /**
    * Whether the watch waits for the run: the required workflows' runs,
-   * or every run when the merge requires nothing in particular.
+   * or every run when the merge requires nothing in particular, except
+   * a run whose every job is a review service's.
    */
   isRunWatched(run) {
-    return (
-      !this.requiresAny || this.subject.required.workflows.includes(run.path)
-    );
+    if (this.requiresAny) {
+      return this.subject.required.workflows.includes(run.path);
+    }
+
+    const jobs = this.checks.filter((check) => check.run_id === run.id);
+
+    return jobs.length === 0 || jobs.some((job) => !parseReviewLabel(job.name));
   }
 
   get watchedRuns() {
@@ -284,18 +293,20 @@ class Watch {
   }
 
   /**
-   * The watched runs that failed with no failed check to show for it: a
-   * workflow that failed before any job ran.
+   * The watched runs that failed before any job ran, so no check run
+   * says so. A run with jobs speaks through them, and a run a newer run
+   * of the same workflow replaced no longer counts.
    */
   get failedRuns() {
-    const failedRunIds = new Set(this.failed.map(({ run_id }) => run_id));
+    const runs = [...this.runs.values()];
 
-    return [...this.runs.values()].filter(
+    return runs.filter(
       (run) =>
         run.status === "completed" &&
         FAILED_RUN_CONCLUSIONS.has(run.conclusion) &&
         this.isRunWatched(run) &&
-        !failedRunIds.has(run.id),
+        !this.runIdsWithChecks.has(run.id) &&
+        !runs.some((other) => other.path === run.path && other.id > run.id),
     );
   }
 
@@ -513,7 +524,7 @@ function commitSubject(repository, sha) {
   return {
     output: { repository, commit: sha },
     sha,
-    required: { contexts: [], workflows: [] },
+    required: { contexts: [], workflows: [], known: true },
     gatesHoldTheWatch: true,
   };
 }
@@ -528,11 +539,19 @@ function pullRequestSubject(repository, argument) {
     );
   }
 
+  const required = requirements(repository, pullRequest.base);
+
   return {
-    output: { repository, pull_request: number, head: pullRequest.head },
+    output: {
+      repository,
+      pull_request: number,
+      head: pullRequest.head,
+      ...(required.known || { requirements_known: false }),
+    },
     sha: pullRequest.head,
-    required: requirements(repository, pullRequest.base),
-    gatesHoldTheWatch: false,
+    required,
+    // With the protection unread, a gate may be required: hold for it.
+    gatesHoldTheWatch: !required.known,
     movedOrClosed(repository) {
       const current = readPullRequest(repository, number);
 
@@ -575,9 +594,10 @@ function readPullRequest(repository, number) {
  * check contexts, each pinned to an app when the rule names one, and
  * workflows, by the path their runs report. Rulesets answer for any
  * branch, and include the ones an organization adds. Classic protection
- * answers 404 for a branch without it, and 403 without admin access,
- * so a refusal means nothing from it. Its `checks` carry the app each
- * context is pinned to, and `contexts` repeat them without it.
+ * answers 404 for a branch without it, which means nothing from it, and
+ * 403 without admin access, which leaves the requirements unknown. Its
+ * `checks` carry the app each context is pinned to, and `contexts`
+ * repeat them without it.
  */
 function requirements(repository, branch) {
   const encoded = encodeURIComponent(branch);
@@ -590,6 +610,8 @@ function requirements(repository, branch) {
       `repos/${repository}/branches/${encoded}/protection/required_status_checks`,
     ]),
   );
+  const protectionRefused =
+    protection instanceof ScriptError && !/HTTP 404/.test(protection.message);
   const protectedContexts = protection?.checks
     ? protection.checks.map(({ context, app_id }) => ({
         name: context,
@@ -615,6 +637,7 @@ function requirements(repository, branch) {
   return {
     contexts: latestOfEach(contexts, ({ name, app_id }) => `${name}:${app_id}`),
     workflows: [...new Set(workflows)],
+    known: !protectionRefused,
   };
 }
 

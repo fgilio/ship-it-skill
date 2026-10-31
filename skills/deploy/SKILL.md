@@ -53,7 +53,7 @@ The artifact is the deploy path in one line. When none applies after that wait, 
 
 ## 4. Watch, and approve gates
 
-A deploy that runs as Actions on the merge commit (paths 1 to 3 of step 3): watch the merge commit as a background command until its runs end, following `${CLAUDE_SKILL_DIR}/../../references/ci-watch.md` with `--approve-gates`. This skill's invocation is the permission, so the script approves each gate the user can approve as the run reaches it, with a comment that names the PR. An environment's wait timer is not a gate: the watch waits through it.
+A deploy that runs as Actions on the merge commit (paths 1 to 3 of step 3): watch the merge commit as a background command until its runs end, following `${CLAUDE_SKILL_DIR}/../../references/ci-watch.md` with `--approve-gates`. This skill's invocation is the permission, so the script approves each gate the user can approve as the run reaches it, with a comment that names the merge commit. An environment's wait timer is not a gate: the watch waits through it.
 
 A gate the script could not approve (`can_approve` false: an environment that forbids approving your own deploy, or a reviewer list without the user), or that GitHub refused, ends the watch as `gated`: escalate as blocked with the run's URL. Never look for another way through: no other account, no admin bypass, no change to the environment's rules.
 

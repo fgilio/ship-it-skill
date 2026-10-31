@@ -4,7 +4,7 @@
 //
 // State (FAKE_GH_STATE, rewritten on every call):
 //   repo, labels, pr { number, state, headRefOid, base, labels }, reviews,
-//   comments, checkRuns, statuses, rules, protection, runs,
+//   comments, checkRuns, statuses, rules, protection (or { forbidden }), runs,
 //   outcomes { <label>: [<outcome per request>] }
 //
 // Review outcomes: an outcome shows up `afterPolls` review listings after its
@@ -466,6 +466,12 @@ function answer() {
     }
 
     if (path.includes("/protection/required_status_checks")) {
+      if (state.protection?.forbidden) {
+        return refuse(
+          "HTTP 403: Resource not accessible by personal access token",
+        );
+      }
+
       return state.protection
         ? respond(state.protection)
         : refuse("HTTP 404: Branch not protected");
