@@ -1,9 +1,8 @@
 ---
 name: verify
 description: >
-  Check production after a deploy: errors, logs, data and uptime, against the hour before it, right away and again two hours later. Use after a deploy the session shipped, or to ask whether a release is healthy. Reads production and never changes it.
+  Check production after a deploy: errors, logs, data and uptime, against the hour before it, right away and again two hours later. Use after a deploy the session shipped, or to ask whether a release is healthy. Reads production and never changes it. Start it only when the user asks for it by name (/ship-it:verify).
 user-invocable: true
-disable-model-invocation: true
 argument-hint: "[<PR number or URL> | <commit>]"
 ---
 

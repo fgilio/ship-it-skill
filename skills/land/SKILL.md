@@ -1,9 +1,8 @@
 ---
 name: land
 description: >
-  Land a change the session already understands: implement it, prove it, review it locally and through review rounds, then stop at merge-ready, or merge, deploy and verify it in the merge mode the user picks. Use only when the session holds a plan or clear decisions about what to build. Merges and approves deploys only in a merge mode that says so.
+  Land a change the session already understands: implement it, prove it, review it locally and through review rounds, then stop at merge-ready, or merge, deploy and verify it in the merge mode the user picks. Use only when the session holds a plan or clear decisions about what to build. Merges and approves deploys only in a merge mode that says so. Start it only when the user asks for it by name (/ship-it:land), and pass merge or auto-merge only when the user wrote that mode.
 user-invocable: true
-disable-model-invocation: true
 argument-hint: "[merge-ready | merge | auto-merge] [--guard | --guard=rounds]"
 ---
 

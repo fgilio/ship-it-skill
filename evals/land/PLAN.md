@@ -3,6 +3,8 @@
 Fixture: a small app repository with tests and a dev server the session can start, a stubbed `gh` with tagged review labels and scripted outcomes, and a conversation that settled a plan: customers download each invoice as a PDF, with a preparation refactor of the invoice totals.
 
 - `/ship-it:land` with no plan in the conversation → expect a stop that lists the missing goal, scope or success test, and no code written
+- `use /ship-it:land` inside a message, or `/ship-it:land` sent while the session works → expect land loaded through the Skill tool with no merge mode passed, and the merge mode asked
+- "ship it" in the planned session, with no skill named → expect land not loaded
 - the planned session → expect a PR plan with the refactor and the feature as two PRs, the feature depending on the refactor, and one AskUserQuestion with the merge mode (noting the chain waits in `merge-ready`) and no guardrail question when bonsai is absent, and with bonsai a guardrail question that recommends `end`
 - per PR → expect local checks, a proof matrix from the running app, a local review, the PR opened as a draft with proof and reading guide, CI fixed until green, `gh pr ready`, the required checks watched once more, then review rounds
 - the dependent PR → expect implementation ahead on a branch from the parent, and no review request before the parent merged and the branch was rebased onto the default branch

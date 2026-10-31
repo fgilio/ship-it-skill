@@ -1,9 +1,8 @@
 ---
 name: review
 description: >
-  Run review rounds on an open pull request: request the reviews the repository's review services offer through labels, wait for them, and address every finding, one focus per round (correctness, then cleanup, then maintainability). Use when a PR is ready for automated review, or to run one round or one label again.
+  Run review rounds on an open pull request: request the reviews the repository's review services offer through labels, wait for them, and address every finding, one focus per round (correctness, then cleanup, then maintainability). Use when a PR is ready for automated review, or to run one round or one label again. Start it only when the user asks for it by name (/ship-it:review).
 user-invocable: true
-disable-model-invocation: true
 argument-hint: "[<PR number or URL>] [correctness | cleanup | maintainability | <label>...] [--guard]"
 ---
 

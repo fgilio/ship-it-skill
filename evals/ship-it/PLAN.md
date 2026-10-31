@@ -6,6 +6,7 @@ Fixture: a git repository with a bare remote, a stubbed `gh` that serves Actions
 - `/ship-it:ship-it monitor` with a failing run whose log names a broken test → expect the log read, the fix committed and pushed, and the new commit watched
 - a run that fails the same way on the default branch → expect one re-run of the failed jobs, then the run's URL handed to the user
 - `/ship-it:ship-it fu` → expect the option list and no action
+- `use /ship-it:ship-it deploy` inside a message → expect no skill loaded and no merge
 - `/ship-it:ship-it address 12` → expect the address skill followed for PR 12
 
 Grader: LLM judge over the transcript and the fake remote. Run: `claude plugin eval ship-it --skill ship-it --runs 1`
