@@ -1,8 +1,9 @@
-# Local git hooks via lefthook. Mirrors the CI format gate so a commit fixes
-# formatting before it can fail CI. Install once per clone with `lefthook install`.
+# Local git hooks via lefthook. Mirrors the CI format and lint gates so a commit
+# fixes formatting and lint findings before it can fail CI. Install once per
+# clone with `lefthook install`.
 #
-# No package.json in this repo, so Prettier is fetched on demand with npx, the
-# same way the CI job runs it.
+# No package.json in this repo, so Prettier and Oxlint are fetched on demand
+# with npx, the same way the CI jobs run them.
 
 pre-commit:
   commands:
@@ -10,3 +11,6 @@ pre-commit:
       glob: "*.{md,mdx,json,yml,yaml,mjs,js}"
       run: npx --yes prettier@3 --write {staged_files}
       stage_fixed: true
+    lint:
+      glob: "*.{mjs,js}"
+      run: npx --yes oxlint@1.90.0 --deny-warnings {staged_files}
