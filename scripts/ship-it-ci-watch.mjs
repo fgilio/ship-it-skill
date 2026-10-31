@@ -72,6 +72,8 @@ class Watch {
   runs = new Map();
   gates = new Map();
   runsWaitingForReviewers = new Set();
+  failedRuns = [];
+  suspectedFailedRunIds = new Set();
 
   constructor(repository, subject) {
     this.repository = repository;
@@ -141,6 +143,16 @@ class Watch {
         });
       }
     }
+
+    // The runs and the checks are read apart, so a run rerun between the
+    // two reads shows its old failure once: a failed run counts when two
+    // reads in a row agree.
+    const candidates = this.failedRunCandidates;
+
+    this.failedRuns = candidates.filter((run) =>
+      this.suspectedFailedRunIds.has(run.id),
+    );
+    this.suspectedFailedRunIds = new Set(candidates.map(({ id }) => id));
   }
 
   /**
@@ -291,18 +303,28 @@ class Watch {
   /**
    * The watched runs that failed with no failed check to say so: a
    * workflow that failed before a job ran, or after its jobs passed. A
-   * run a newer run of the same workflow replaced no longer counts.
+   * failed or running check of any job, a review service's included,
+   * speaks for its run instead, and a run a newer run of the same
+   * workflow replaced does not count.
    */
-  get failedRuns() {
+  get failedRunCandidates() {
     const runs = [...this.runs.values()];
-    const failedRunIds = new Set(this.failed.map(({ run_id }) => run_id));
+    const spokenFor = new Set(
+      this.checks
+        .filter(
+          (check) =>
+            check.status !== "completed" ||
+            !PASSING_CONCLUSIONS.has(check.conclusion),
+        )
+        .map(({ run_id }) => run_id),
+    );
 
     return runs.filter(
       (run) =>
         run.status === "completed" &&
         FAILED_RUN_CONCLUSIONS.has(run.conclusion) &&
         this.isRunWatched(run) &&
-        !failedRunIds.has(run.id) &&
+        !spokenFor.has(run.id) &&
         !runs.some((other) => other.path === run.path && other.id > run.id),
     );
   }
@@ -474,10 +496,12 @@ main(async () => {
       return watch.finish("none");
     }
 
+    // A run suspected of failing holds the watch until the next read agrees.
     if (
       registered &&
       watch.pending.length === 0 &&
-      watch.watchedRuns.length === 0
+      watch.watchedRuns.length === 0 &&
+      watch.suspectedFailedRunIds.size === 0
     ) {
       return watch.finish(watch.gatedWatched.length > 0 ? "gated" : "passed");
     }

@@ -24,8 +24,9 @@
 // an approval, then completes two polls later. A run exists for every run id
 // a check names, and for every entry of `runs`, which holds a run's workflow
 // `path`, `missing` for a run the repository cannot serve, `appearsAtPoll`
-// for one created late, `conclusion` for one that ended with no job, and
-// `refusesApproval` for one whose environment refuses the approval. A run is in progress while any of its checks has not
+// for one created late, `conclusion` for one that ended with no job,
+// `staleFailure` for one that shows its old failure while its jobs run again,
+// and `refusesApproval` for one whose environment refuses the approval. A run is in progress while any of its checks has not
 // registered. The pull request's head moves at `headMovesAtPoll` and the pull
 // request closes at `closesAtPoll`.
 //
@@ -286,6 +287,18 @@ function runDetails(runId) {
   const failed = [...latest.values()].some(
     (check) => !["success", "neutral", "skipped"].includes(check.conclusion),
   );
+
+  // A run rerun between two reads still shows its old failure while its
+  // jobs run again.
+  if (state.runs?.[runId]?.staleFailure && status !== "completed") {
+    return {
+      id: runId,
+      status: "completed",
+      conclusion: "failure",
+      html_url: `https://github.com/${state.repo}/actions/runs/${runId}`,
+      path: state.runs?.[runId]?.path ?? ".github/workflows/ci.yml",
+    };
+  }
 
   return {
     id: runId,

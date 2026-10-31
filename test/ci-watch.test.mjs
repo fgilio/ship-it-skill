@@ -897,6 +897,35 @@ describe("ship-it-ci-watch.mjs on a commit", () => {
     assert.deepEqual(output.failed, []);
   });
 
+  test("lets a failed review job speak for its run instead of the run's conclusion", async () => {
+    writeState({
+      checkRuns: [
+        check("lint", { completesAtPoll: 1 }),
+        check("reviewbot-review:code-review", {
+          completesAtPoll: 1,
+          conclusion: "failure",
+        }),
+      ],
+    });
+
+    const output = await watch(HEAD);
+
+    assert.equal(output.result, "passed");
+    assert.deepEqual(output.failed, []);
+  });
+
+  test("waits for a rerun run's jobs instead of counting its old failure", async () => {
+    writeState({
+      runs: { [RUN]: { staleFailure: true } },
+      checkRuns: [check("test", { completesAtPoll: 3 })],
+    });
+
+    const output = await watch(HEAD);
+
+    assert.equal(output.result, "passed");
+    assert.deepEqual(output.passed, ["test"]);
+  });
+
   test("reports a run that failed after its jobs passed", async () => {
     writeState({
       runs: { [RUN]: { conclusion: "failure" } },
