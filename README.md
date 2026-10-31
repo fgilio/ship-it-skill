@@ -12,6 +12,8 @@ A Claude Code plugin that ships a change: focused commits, the push, GitHub Acti
 | `/ship-it:deploy` | Merge, watch the deploy until it is live, and approve its manual gates |
 | `/ship-it:verify` | Compare production after the deploy with production before it, now and two hours later |
 
+Claude starts a skill only when you name it: as a command, or anywhere in a message (`use /ship-it:land`), even one sent while Claude is busy. `/ship-it:deploy` and `/ship-it:ship-it` start only as a command at the start of a message sent while Claude is idle, because either one can merge and approve a deploy's gates.
+
 ## Land
 
 Land runs only when the session already knows what to build: a plan, or a design conversation that settled the decisions. Otherwise it stops and says what is missing. Its aim is to deploy as often as possible: small PRs, each merged and deployed on its own as soon as it is ready.

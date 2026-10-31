@@ -1,9 +1,8 @@
 ---
 name: pr
 description: >
-  Open a pull request for the current branch: commit, push, write the title and description the repository's template asks for, and watch CI. Use when a branch is ready for review.
+  Open a pull request for the current branch: commit, push, write the title and description the repository's template asks for, and watch CI. Use when a branch is ready for review. Start it only when the user asks for it by name (/ship-it:pr).
 user-invocable: true
-disable-model-invocation: true
 argument-hint: "[--base <branch>] [--draft]"
 ---
 

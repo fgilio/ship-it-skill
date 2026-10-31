@@ -1,9 +1,8 @@
 ---
 name: address
 description: >
-  Address review feedback on the session's pull requests: give every finding a decision (fix, answer or escalate), push the fixes, reply on each thread, and resolve it. Use after reviews land on a PR, from people or bots. Replies on review threads.
+  Address review feedback on the session's pull requests: give every finding a decision (fix, answer or escalate), push the fixes, reply on each thread, and resolve it. Use after reviews land on a PR, from people or bots. Replies on review threads. Start it only when the user asks for it by name (/ship-it:address).
 user-invocable: true
-disable-model-invocation: true
 argument-hint: "[<PR number or URL>...] [--guard]"
 ---
 
