@@ -91,7 +91,7 @@ Replies cite commits, so code lands first:
      -f id=<threadId>
    ```
    Leave a thread open when the reply asks the reviewer something or waits for their review again, and while its finding waits for the user. Resolving those buries the conversation.
-6. When commits were pushed, follow `${CLAUDE_SKILL_DIR}/../../references/ci-watch.md`. Inside review rounds the watch runs in the background and the next round goes on without it, as the review skill's step 3 says.
+6. When commits were pushed, follow `${CLAUDE_SKILL_DIR}/../../references/ci-watch.md`. Inside review rounds the watch runs in the background and the next round goes on without it, as the review skill's step 3 says. A manual gate the watch lists follows that reference's "Manual gates".
 7. Ask the saved escalations, all in one AskUserQuestion, one question per finding, each with a recommendation. Act on each answer as Fix or Answer, through steps 1 to 6.
 
 ## Report

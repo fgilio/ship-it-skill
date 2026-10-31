@@ -1,24 +1,40 @@
 # Watch CI
 
-Watch the checks of the pushed commit until they end.
+Watch the checks of the pushed commit until they end, with the watch script:
 
-The commands below are `gh`'s. When `gh api repos/{owner}/{repo}` fails, read `github.md` before the next call.
+```bash
+# A PR's head
+${CLAUDE_SKILL_DIR}/../../scripts/ship-it-ci-watch.mjs <PR number or URL>
+# A commit without a PR (the default branch after a merge)
+${CLAUDE_SKILL_DIR}/../../scripts/ship-it-ci-watch.mjs <sha>
+# → {"result": "passed", "head": "<sha>", "required": [...], "failed": [...], "pending": [...], "gates": [...]}
+```
 
-- **A PR's head**: `gh pr checks <number> --watch --required`. It waits for the checks the merge needs, including required workflows an organization ruleset adds from outside the repository, and leaves out slow checks nothing waits for, such as a review service's.
-- **A commit without a PR** (the default branch after a merge): its Actions runs.
+The script needs `gh`. When `gh api repos/{owner}/{repo}` fails, read `github.md` and follow its "Watching CI" section instead.
 
-  ```bash
-  gh run list --commit <sha> --json databaseId,workflowName,status,conclusion
-  gh run watch <run id> --exit-status --compact
-  ```
+It waits up to 45 minutes, so start it as a background command and act on its output when it ends. For a PR it watches the checks the merge requires, read from the base branch's rulesets (an organization's included) and its branch protection, and when they name none, every check on the head except a review service's and the manual gates. Checks take a few seconds to register after a push, and the script gives them 2 minutes. For a commit it watches every check except a review service's, gates included.
 
-  `gh run watch` answers 404 for a run whose workflow lives outside the repository, whatever the run's result. Read that run's result from the commit's check runs instead: `gh api 'repos/{owner}/{repo}/commits/<sha>/check-runs' --paginate`.
+| Result | Meaning | Next |
+| --- | --- | --- |
+| `passed` | Every watched check passed | Report it, and the `gates` it lists, as "Manual gates" says. |
+| `failed` | A watched check failed; `failed` names it with its run and job | Read the failed jobs' logs (`gh run view <run id> --log-failed`), fix the cause, commit, push, and watch the new commit. For a cause outside the change (the same failure on the default branch, a flaky test, a service outage), re-run the failed jobs once (`gh run rerun <run id> --failed`) and watch again. A second failure goes to the user with the run's URL. |
+| `gated` | A watched check waits for an environment's approval | "Manual gates" below. |
+| `none` | No check registered within 2 minutes | A PR whose `missing` names required checks waits for a check that never ran: escalate as blocked with the names, since the merge waits for them too. Otherwise the commit has nothing to watch: say so. |
+| `timeout` | Checks still ran at the limit; `pending` names them | Escalate as can wait, with their URLs. |
+| `superseded` | The head moved (`head_moved_to`) | Watch the new head. |
+| `closed` | The PR closed | Stop. |
 
-A watch can outlast a command's time limit, so start it as a background command when the harness offers one, and act when it ends. Runs take a few seconds to register after a push. A commit with no check a minute after the push has nothing to watch: say so.
+## Manual gates
 
-- **Passed**: report it.
-- **Failed**: read the failed jobs' logs (`gh run view <run id> --log-failed`), fix the cause, commit, push, and watch the new commit's runs.
-- **Failed for a cause outside the change** (the same failure on the default branch, a flaky test, a service outage): re-run the failed jobs once (`gh run rerun <run id> --failed`). A second failure goes to the user with the run's URL.
+A job that waits for an environment's approval is a manual gate, never CI. The script lists every gate it meets in `gates`: the run, its environment, whether the user can approve it (`can_approve`), the jobs that wait and the jobs the gate holds back. It waits for a gate only when the merge requires it, or on a commit's watch, where the run cannot end without it.
+
+The report names each gate with its environment and URL, approved or not. Approving one has effects beyond CI (a deploy to that environment), so it takes the user's permission:
+
+- The `deploy` skill's invocation, which covers the deploy's gates.
+- `gates: approve` in a land run file, or `--approve-gates` passed to the skill.
+- Otherwise, when `can_approve` is true, one AskUserQuestion per invocation, at the first gate met: it names the PR or commit, the gate, its environment and what approving does (the environment's URL when GitHub shows one), and offers to approve every gate this invocation meets, to leave them, or to ask at each one. The answer holds for the rest of the invocation.
+
+To approve, run the script again with `--approve-gates`: it approves each gate the user can approve through the run's pending deployments, marks it `approved`, and watches on. A gate the user cannot approve stays listed: escalate as blocked when the result is `gated`, and name it in the report otherwise. Never look for another way through: no other account, no admin bypass, no change to the environment's rules.
 
 ## No-op merges
 

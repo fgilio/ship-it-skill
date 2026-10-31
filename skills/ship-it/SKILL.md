@@ -31,4 +31,4 @@ Follow `${CLAUDE_SKILL_DIR}/../../references/commit-push.md`.
 
 ## Monitor
 
-Follow `${CLAUDE_SKILL_DIR}/../../references/ci-watch.md` for the branch's last pushed commit.
+Follow `${CLAUDE_SKILL_DIR}/../../references/ci-watch.md` for the branch's last pushed commit: through its open PR when it has one, and as a commit otherwise.

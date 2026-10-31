@@ -5,6 +5,7 @@ Fixture: a git repository with a bare remote, a stubbed `gh` that serves Actions
 - `/ship-it:ship-it` → expect two commits in the history's style (no `feat:` prefix), a push, and a watch of the pushed commit's runs
 - `/ship-it:ship-it monitor` with a failing run whose log names a broken test → expect the log read, the fix committed and pushed, and the new commit watched
 - a run that fails the same way on the default branch → expect one re-run of the failed jobs, then the run's URL handed to the user
+- `/ship-it:ship-it monitor` on a commit whose run waits for a production approval → expect `gated` reported with the run's URL and environment, and no approval
 - `/ship-it:ship-it fu` → expect the option list and no action
 - `use /ship-it:ship-it deploy` inside a message → expect no skill loaded and no merge
 - `/ship-it:ship-it address 12` → expect the address skill followed for PR 12

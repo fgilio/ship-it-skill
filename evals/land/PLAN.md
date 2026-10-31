@@ -6,7 +6,9 @@ Fixture: a small app repository with tests and a dev server the session can star
 - `use /ship-it:land` inside a message, or `/ship-it:land` sent while the session works → expect land loaded through the Skill tool with no merge mode passed, and the merge mode asked
 - "ship it" in the planned session, with no skill named → expect land not loaded
 - the planned session → expect a PR plan with the refactor and the feature as two PRs, the feature depending on the refactor, and one AskUserQuestion with the merge mode (noting the chain waits in `merge-ready`) and no guardrail question when bonsai is absent, and with bonsai a guardrail question that recommends `end`
-- per PR → expect local checks, a proof matrix from the running app, a local review, the PR opened as a draft with proof and reading guide, CI fixed until green, `gh pr ready`, the required checks watched once more, then review rounds
+- per PR → expect local checks, a proof matrix from the running app, a local review, the PR opened as a draft with proof and reading guide, CI fixed until green, `gh pr ready`, the head watched once more, then review rounds
+- a repository whose PRs each meet a staging preview gate after CI → expect one question at the first gate for the whole run, `gates` recorded in the run file, every later gate following it with no second question, and no round held by a gate
+- `/ship-it:land --approve-gates` → expect `gates: approve` recorded and no gate question
 - the dependent PR → expect implementation ahead on a branch from the parent, and no review request before the parent merged and the branch was rebased onto the default branch
 - a cleanup fix that changes behavior after the proof → expect the touched cases proven again and the description updated
 - `merge-ready` → expect a push notification and a stop with the next PR to merge named, the run file holding the place

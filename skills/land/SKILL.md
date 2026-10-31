@@ -3,7 +3,7 @@ name: land
 description: >
   Land a change the session already understands: implement it, prove it, review it locally and through review rounds, then stop at merge-ready, or merge, deploy and verify it in the merge mode the user picks. Use only when the session holds a plan or clear decisions about what to build. Merges and approves deploys only in a merge mode that says so. Start it only when the user asks for it by name (/ship-it:land), and pass merge or auto-merge only when the user wrote that mode.
 user-invocable: true
-argument-hint: "[merge-ready | merge | auto-merge] [--guard | --guard=rounds]"
+argument-hint: "[merge-ready | merge | auto-merge] [--guard | --guard=rounds] [--approve-gates]"
 ---
 
 # Land
@@ -44,15 +44,18 @@ One AskUserQuestion, holding only the questions `$ARGUMENTS` does not answer:
   - `rounds`: each review round hands its findings to guard, so a check can open while the PR is still in review.
   - `off`: no guard. The report lists the findings a check could have caught.
 
+**Manual gates** are not asked here, since most repositories have none. The first CI watch that meets one asks, as `ci-watch.md` says, once for the whole run: the answer is recorded as `gates` in the run file (`approve`, `ask` or `leave`), and every later watch of the run follows it. `--approve-gates` in `$ARGUMENTS` records `approve` without asking.
+
 ## 4. Run file
 
-Write the run to `~/.claude/ship-it/runs/<owner>/<repo>/<plan slug>.json` before the first PR, and update it after every step. The plan slug is the goal in a few kebab-case words (`invoice-pdf-download`). A PR's `base` is the commit its branch starts from: the default branch's commit it was cut from, or its parent's last commit for a PR taken ahead. `guard.when` is `end`, `rounds` or `off`. With `end`, `guard.status` is `pending` until section 7 runs, `waiting` while guard holds candidates for a later decision round, and `done` after, and `guard.prs` lists the PRs its pass covered.
+Write the run to `~/.claude/ship-it/runs/<owner>/<repo>/<plan slug>.json` before the first PR, and update it after every step. The plan slug is the goal in a few kebab-case words (`invoice-pdf-download`). A PR's `base` is the commit its branch starts from: the default branch's commit it was cut from, or its parent's last commit for a PR taken ahead. `guard.when` is `end`, `rounds` or `off`. With `end`, `guard.status` is `pending` until section 7 runs, `waiting` while guard holds candidates for a later decision round, and `done` after, and `guard.prs` lists the PRs its pass covered. `gates` appears once a CI watch met a manual gate and the user answered for the run.
 
 ```json
 {
   "plan": "Customers can download each invoice as a PDF",
   "mode": "merge-ready",
   "guard": { "when": "end", "status": "pending" },
+  "gates": "approve",
   "prs": [
     { "title": "Log invoice downloads", "branch": "invoice-download-log", "depends_on": [], "number": 40, "step": "merged", "base": "77ad0e4", "proof_head": "e51b9c3" },
     { "title": "Render invoices to PDF", "branch": "invoice-pdf", "depends_on": [{ "title": "Log invoice downloads", "needs": "evidence" }], "number": 41, "step": "review", "base": "9b1e0c2", "proof_head": "3f2c1aa" }
@@ -74,7 +77,7 @@ For each PR:
 3. **Local checks**: the test, static analysis and format commands the repository's CLAUDE.md, AGENTS.md or CI workflow names. All green before the next step. The artifact is each command with its result.
 4. **Prove**: follow `proof.md`. The artifact is the test matrix. Record the head it ran on as `proof_head`.
 5. **Local review**: the `codex-partner` skill's review mode against the base branch when the session has it, since a second model reads the code independently, and the `code-review` skill otherwise. Fix every P0 and P1, and each P2 that holds up against the code, then run the checks and review again. After three reviews, a P0 or P1 still open is escalated as blocked for this PR, and the other PRs go on.
-6. **Open the PR as a draft**: follow the `pr` skill with `--draft`. The description carries the proof and the reading guide. Its CI watch is the gate to the rounds: fix each failure and push until CI is green on the head. A review service that reviews every new PR, such as Codex, may answer meanwhile. Never wait for it, since it may not be set up or may stall: its findings go to the first round, which addresses every unresolved finding. When CI is green, mark the PR ready with `gh pr ready <number>`, then watch the head's required checks once more: a workflow may run only when the PR leaves draft, or skip its jobs on a draft. The first round starts when that watch passes.
+6. **Open the PR as a draft**: follow the `pr` skill with `--draft`. The description carries the proof and the reading guide. Its CI watch is the gate to the rounds: fix each failure and push until CI is green on the head. A review service that reviews every new PR, such as Codex, may answer meanwhile. Never wait for it, since it may not be set up or may stall: its findings go to the first round, which addresses every unresolved finding. When CI is green, mark the PR ready with `gh pr ready <number>`, then watch the head once more: a workflow may run only when the PR leaves draft, or skip its jobs on a draft. The first round starts when that watch passes. A manual gate the watch lists is not CI: it never holds the rounds, and `ci-watch.md` says when it is approved.
 7. **Review rounds**: follow the `review` skill, with `--guard` when `guard.when` is `rounds`. Only the first round waits for CI, through step 6. Each later round waits only for the previous round's fixes to be pushed and every one of its threads answered and resolved.
 8. **Close**: the PR is ready when every line of this checklist holds, and the checklist is the artifact.
    - CI is green on the head.

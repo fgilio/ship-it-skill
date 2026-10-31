@@ -29,7 +29,17 @@ The skills write each GitHub call as a `gh` command. With MCP, use the tool that
 ## What MCP cannot do
 
 - **The user's merge method** (`viewerDefaultMergeMethod`): read it from the base branch's history (`list_commits`). Commits titled `Merge pull request #<number>` mean `merge`, one commit per PR ending in `(#<number>)` means `squash`, and anything else means `rebase`. When the history mixes them, ask once.
-- **The checks a merge requires** (`gh pr checks --required`): MCP does not say which are required. Watch every check on the head except the ones named after a review label (`<service>-review:<kind>`), so an optional check that fails holds the watch too: fix it, or report it as outside the change.
+- **The checks a merge requires**: MCP reads no ruleset, so it cannot say which are required. "Watching CI" below watches every check instead.
+- **The scripts** (`scripts/`): they run `gh`. "Watching CI" below and `skills/review/without-gh.md` do their work by hand.
+
+## Watching CI
+
+`ci-watch.md` runs the watch script. With MCP, carry out the same watch by hand, and report with the script's results:
+
+1. **The checks.** The head's check runs (`get_check_runs`, which lists a review service's checks too) and its commit statuses (`get_commit_status`, when the session has it). One entry per name, the newest. Give them 2 minutes to register after a push: none by then is `none`.
+2. **Watched.** Every check except the ones named after a review label (`<service>-review:<kind>`), so an optional check that fails holds the watch too: fix it, or report it as outside the change. Leave out the manual gates: a check run whose status is `waiting`, and every open check run of a run whose status is `waiting` (`actions_get` `get_workflow_run`), since the gate holds them.
+3. **Read** as "Waiting" says, until every watched check completed. A conclusion of `success`, `neutral` or `skipped` passes. Any other ends the watch as `failed`, with the job's URL. The head moving is `superseded`, the PR closing is `closed`, and 45 minutes is `timeout` with the pending names.
+4. **Gates.** Report each run that waits as `ci-watch.md`'s "Manual gates" says. MCP offers no call on a run's pending deployments, so the user approves a gate, from the run's URL. On a commit's watch a run that waits is `gated`.
 
 ## Waiting
 
