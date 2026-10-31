@@ -13,4 +13,8 @@ pre-commit:
       stage_fixed: true
     lint:
       glob: "*.{mjs,js}"
+      # .oxlintrc.json ignores the fixtures, and Oxlint exits 1 when every file
+      # it was given is ignored, so the hook never hands them over.
+      exclude:
+        - "test/fixtures/**"
       run: npx --yes oxlint@1.90.0 --deny-warnings {staged_files}
