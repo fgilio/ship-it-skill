@@ -9,7 +9,10 @@
   },
   "rules": {
     "no-undef": "error",
-    "no-unused-vars": ["error", { "ignoreRestSiblings": true }]
+    "no-unused-vars": [
+      "error",
+      { "ignoreRestSiblings": true, "argsIgnorePattern": "^_" }
+    ]
   },
   "ignorePatterns": ["test/fixtures/**"]
 }
