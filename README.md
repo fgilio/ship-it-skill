@@ -46,7 +46,7 @@ The review skill works with any review service that follows one protocol, and na
 - The answer is a PR review whose body ends with `<!-- <service>-review kind=<kind> sha=<head sha> -->`, or a refusal comment that carries `<!-- <service>-review-refused -->` and names the label.
 - While the review runs, a check run named after the label shows on the head.
 
-`skills/review/scripts/` holds the two scripts that speak it: one lists the tagged labels, the other requests reviews and waits for each answer. Without `gh`, the review skill speaks it through the GitHub MCP tools.
+`scripts/` holds the two scripts that speak it: one lists the tagged labels, the other requests reviews and waits for each answer. Without `gh`, the review skill speaks it through the GitHub MCP tools.
 
 ## Merge modes
 
@@ -80,7 +80,7 @@ With [bonsai](https://github.com/publicala/claude-plugins/tree/main/plugins/bons
 ## Layout
 
 - `skills/<verb>/SKILL.md`: one skill per verb
-- `skills/review/scripts/`: the review service scripts, and `skills/review/without-gh.md`: their protocol by hand, for sessions without `gh`
+- `scripts/`: the scripts the skills run, and `skills/review/without-gh.md`: the review scripts' protocol by hand, for sessions without `gh`
 - `references/`: guidance the skills share: GitHub access through `gh` or MCP, commit and push, watching CI, proof, merge modes, escalation
 - `evals/<verb>/PLAN.md`: eval plans per skill
 - `test/`: tests for the scripts, against a fake `gh` (`node --test 'test/*.test.mjs'`)
