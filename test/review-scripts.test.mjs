@@ -16,12 +16,7 @@ import { afterEach, beforeEach, describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const repositoryDirectory = dirname(dirname(fileURLToPath(import.meta.url)));
-const scriptsDirectory = join(
-  repositoryDirectory,
-  "skills",
-  "review",
-  "scripts",
-);
+const scriptsDirectory = join(repositoryDirectory, "scripts");
 const fakeGhSource = join(
   repositoryDirectory,
   "test",

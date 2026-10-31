@@ -1,5 +1,5 @@
 /**
- * Shared runtime for the review scripts.
+ * Shared runtime for the scripts.
  *
  * Every GitHub call goes through gh(), so argument passing, JSON
  * parsing, and failure messages stay in one place. The calls use the
