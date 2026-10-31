@@ -90,6 +90,7 @@ With [bonsai](https://github.com/publicala/claude-plugins/tree/main/plugins/bons
 - `references/`: guidance the skills share: GitHub access through `gh` or MCP, commit and push, watching CI, proof, merge modes, escalation
 - `evals/<verb>/PLAN.md`: eval plans per skill
 - `test/`: tests for the scripts, against a fake `gh` (`node --test 'test/*.test.mjs'`)
+- `.oxlintrc.json`: the lint rules for the scripts and tests (`npx --yes oxlint@1.90.0 --deny-warnings .`)
 
 ## License
 
