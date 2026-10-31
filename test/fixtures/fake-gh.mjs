@@ -14,17 +14,20 @@
 //
 // CI watch: every listing of a commit's check runs without a name filter is
 // one poll. A check run with a `status` is served as is. Without one, its
-// status follows the poll count: hidden before `appearsAtPoll`, in progress
-// before `completesAtPoll`, then completed with its `conclusion`. A check with
+// status follows the poll count: hidden before `appearsAtPoll`, queued before
+// `queuedUntil`, in progress before `completesAtPoll`, then completed with its
+// `conclusion`. A check with
 // `gate { environment, can_approve, reviewers, waitsAtPoll, endsAtPoll }`
 // waits from `waitsAtPoll`: with reviewers, until its environment is approved,
 // then it completes on the next poll; without reviewers (a timer), until
-// `endsAtPoll`. A check with `heldByGate` stays queued until its run has an
-// approval, then completes two polls later. `runs[<id>]` holds a run's
-// workflow `path`, or `missing` for a run the repository cannot serve. A run
-// is in progress while any of its checks has not registered. The pull
-// request's head moves at `headMovesAtPoll` and the pull request closes at
-// `closesAtPoll`.
+// `endsAtPoll`. A check with `heldByGate` does not register until its run has
+// an approval, then completes two polls later. A run exists for every run id
+// a check names, and for every entry of `runs`, which holds a run's workflow
+// `path`, `missing` for a run the repository cannot serve, `appearsAtPoll`
+// for one created late, and `refusesApproval` for one whose environment
+// refuses the approval. A run is in progress while any of its checks has not
+// registered. The pull request's head moves at `headMovesAtPoll` and the pull
+// request closes at `closesAtPoll`.
 //
 // FAKE_GH_STALL_ON stalls any call whose arguments contain it.
 
@@ -215,12 +218,16 @@ function visibleCheck(check) {
     );
 
     if (!approval) {
-      return served("queued");
+      return null;
     }
 
     return poll > approval.atPoll + 1
       ? served("completed", "success")
       : served("in_progress");
+  }
+
+  if (poll < (check.queuedUntil ?? 0)) {
+    return served("queued");
   }
 
   return poll >= (check.completesAtPoll ?? 1)
@@ -232,6 +239,21 @@ function visibleChecks(sha) {
   return state.checkRuns
     .map(visibleCheck)
     .filter((check) => check && check.head_sha === sha);
+}
+
+function runIds() {
+  return [
+    ...new Set([
+      ...state.checkRuns.map(({ run_id }) => run_id).filter(Boolean),
+      ...Object.keys(state.runs ?? {}).map(Number),
+    ]),
+  ];
+}
+
+function runExists(runId) {
+  const run = state.runs?.[runId];
+
+  return !run?.missing && state.watchPolls >= (run?.appearsAtPoll ?? 0);
 }
 
 function runStatus(runId) {
@@ -246,6 +268,15 @@ function runStatus(runId) {
   return checks.every((check) => check?.status === "completed")
     ? "completed"
     : "in_progress";
+}
+
+function runDetails(runId) {
+  return {
+    id: runId,
+    status: runStatus(runId),
+    html_url: `https://github.com/${state.repo}/actions/runs/${runId}`,
+    path: state.runs?.[runId]?.path ?? ".github/workflows/ci.yml",
+  };
 }
 
 function pendingDeployments(runId) {
@@ -291,11 +322,30 @@ function answerPullRequest() {
   });
 }
 
-function answerActionsRun(method, path) {
+function answerActionsRuns(method, path) {
+  if (path.includes("/actions/runs?")) {
+    const sha = path.split("head_sha=")[1].split("&")[0];
+    const runs = runIds()
+      .filter(
+        (runId) =>
+          runExists(runId) &&
+          state.checkRuns.some(
+            (check) => check.run_id === runId && check.head_sha === sha,
+          ),
+      )
+      .map(runDetails);
+
+    return respond([{ total_count: runs.length, workflow_runs: runs }]);
+  }
+
   const runId = Number(path.split("/actions/runs/")[1].split("/")[0]);
 
   if (path.endsWith("/pending_deployments")) {
     if (method === "POST") {
+      if (state.runs?.[runId]?.refusesApproval) {
+        return refuse("HTTP 422: The environment refused the approval");
+      }
+
       for (const field of values("-F")) {
         if (!field.startsWith("environment_ids[]=")) {
           continue;
@@ -314,16 +364,11 @@ function answerActionsRun(method, path) {
     return respond(pendingDeployments(runId));
   }
 
-  if (state.runs?.[runId]?.missing) {
+  if (!runExists(runId)) {
     return refuse("HTTP 404: Not Found");
   }
 
-  return respond({
-    id: runId,
-    status: runStatus(runId),
-    html_url: `https://github.com/${state.repo}/actions/runs/${runId}`,
-    path: state.runs?.[runId]?.path ?? ".github/workflows/ci.yml",
-  });
+  return respond(runDetails(runId));
 }
 
 function answer() {
@@ -405,8 +450,8 @@ function answer() {
         : refuse("HTTP 404: Branch not protected");
     }
 
-    if (path.includes("/actions/runs/")) {
-      return answerActionsRun(method, path);
+    if (path.includes("/actions/runs")) {
+      return answerActionsRuns(method, path);
     }
   }
 

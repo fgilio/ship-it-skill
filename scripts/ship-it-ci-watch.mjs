@@ -53,6 +53,7 @@ Options:
 
 const COMMIT_SHA = /^[0-9a-f]{7,40}$/i;
 const ACTIONS_JOB_URL = /\/actions\/runs\/(\d+)(?:\/jobs?\/(\d+))?/;
+const WORKFLOW_PATH = /(\.github\/workflows\/[^@]+)/;
 
 // GitHub counts these as passing for a required check.
 const PASSING_CONCLUSIONS = new Set(["success", "neutral", "skipped"]);
@@ -69,16 +70,22 @@ class Watch {
   }
 
   /**
-   * Reads the commit's check runs and statuses, the runs they belong to,
-   * and the gates of every run that waits for reviewers.
+   * Reads the commit's runs, its check runs and statuses, and the gates
+   * of every run that waits for reviewers. The runs come first, since a
+   * run exists before its first job registers a check.
    */
   read() {
+    for (const run of listRuns(this.repository, this.subject.sha)) {
+      this.runs.set(run.id, run);
+    }
+
     const found = [
       ...checkRuns(this.repository, this.subject.sha),
       ...commitStatuses(this.repository, this.subject.sha),
     ];
 
-    // A run's workflow never changes, so a completed run is read once.
+    // A run the list leaves out (one a workflow outside the repository
+    // started) is read on its own, once it is complete.
     for (const id of new Set(found.map(({ run_id }) => run_id))) {
       if (id && this.runs.get(id)?.status !== "completed") {
         this.runs.set(id, readRun(this.repository, id));
@@ -104,6 +111,7 @@ class Watch {
         }
 
         const key = `${run.id}:${deployment.environment.id}`;
+        const known = this.gates.get(key);
 
         this.runsWaitingForReviewers.add(run.id);
         this.gates.set(key, {
@@ -112,28 +120,27 @@ class Watch {
           environment: deployment.environment.name,
           environment_id: deployment.environment.id,
           can_approve: deployment.current_user_can_approve,
-          approved: this.gates.get(key)?.approved ?? false,
-          jobs: this.jobsOfRun(run.id, "waiting"),
-          blocked: this.jobsOfRun(run.id, "queued"),
+          approved: known?.approved ?? false,
+          ...(known?.approval_error && {
+            approval_error: known.approval_error,
+          }),
+          jobs: this.checks
+            .filter(
+              (check) => check.run_id === run.id && check.status === "waiting",
+            )
+            .map(({ name }) => name),
         });
       }
     }
   }
 
-  jobsOfRun(runId, status) {
-    return this.checks
-      .filter((check) => check.run_id === runId && check.status === status)
-      .map(({ name }) => name);
-  }
-
   /**
-   * A gate waits for a reviewer. A queued job of a run that waits for
-   * one cannot start until someone approves, so the gate holds it too.
-   * A job already running ends on its own.
+   * A gate waits for a reviewer. The jobs behind it register only once
+   * it is approved, so a queued job is queued for a runner and runs.
    */
   isHeldByGate(check) {
     return (
-      (check.status === "waiting" || check.status === "queued") &&
+      check.status === "waiting" &&
       this.runsWaitingForReviewers.has(check.run_id)
     );
   }
@@ -164,7 +171,7 @@ class Watch {
   /**
    * The checks the watch waits for: the required ones, or, when the
    * merge requires none, every check except a review service's and the
-   * ones a gate holds. A commit's watch keeps the gated ones.
+   * gates. A commit's watch keeps the gates.
    */
   get watched() {
     if (this.requiresAny) {
@@ -277,7 +284,8 @@ class Watch {
   /**
    * Approves each gate the user can approve, all of them or those of the
    * named environments, and says how many it approved, so the next read
-   * sees the run move on.
+   * sees the run move on. A refusal stays on the gate, so the result
+   * still names it.
    */
   approveGates(environments) {
     let approved = 0;
@@ -285,24 +293,32 @@ class Watch {
     for (const gate of this.gates.values()) {
       if (
         gate.approved ||
+        gate.approval_error ||
         !gate.can_approve ||
         (environments !== null && !environments.includes(gate.environment))
       ) {
         continue;
       }
 
-      gh([
-        "api",
-        "-X",
-        "POST",
-        `repos/${this.repository}/actions/runs/${gate.run_id}/pending_deployments`,
-        "-F",
-        `environment_ids[]=${gate.environment_id}`,
-        "-f",
-        "state=approved",
-        "-f",
-        `comment=Approved by ship-it for ${this.subject.output.pull_request ? `PR #${this.subject.output.pull_request}` : this.subject.sha}`,
-      ]);
+      const refusal = attempt(() =>
+        gh([
+          "api",
+          "-X",
+          "POST",
+          `repos/${this.repository}/actions/runs/${gate.run_id}/pending_deployments`,
+          "-F",
+          `environment_ids[]=${gate.environment_id}`,
+          "-f",
+          "state=approved",
+          "-f",
+          `comment=Approved by ship-it for ${this.subject.output.pull_request ? `PR #${this.subject.output.pull_request}` : this.subject.sha}`,
+        ]),
+      );
+
+      if (refusal instanceof ScriptError) {
+        gate.approval_error = refusal.message;
+        continue;
+      }
 
       gate.approved = true;
       approved++;
@@ -557,7 +573,7 @@ function requirements(repository, branch) {
   const workflows = rules
     .filter((rule) => rule.type === "workflows")
     .flatMap((rule) => rule.parameters?.workflows ?? [])
-    .map(({ path }) => path);
+    .map(({ path }) => workflowPath(path));
 
   return {
     contexts: latestOfEach(contexts, ({ name, app_id }) => `${name}:${app_id}`),
@@ -565,12 +581,24 @@ function requirements(repository, branch) {
   };
 }
 
+/**
+ * A workflow's file path, as rulesets name it: without the repository
+ * a reference prefixes, or the ref a run suffixes (`...build.yml@main`).
+ */
+function workflowPath(path) {
+  return path?.match(WORKFLOW_PATH)?.[1] ?? path ?? null;
+}
+
+/**
+ * The call's result, or the ScriptError a refused gh call raised, so a
+ * caller can go on without it.
+ */
 function attempt(call) {
   try {
     return call();
   } catch (error) {
     if (error instanceof ScriptError) {
-      return null;
+      return error;
     }
 
     throw error;
@@ -643,6 +671,22 @@ function latestOfEach(
 }
 
 /**
+ * The Actions runs on the commit. A repository that refuses the list
+ * leaves the runs to be read from the check runs.
+ */
+function listRuns(repository, sha) {
+  const pages = attempt(() =>
+    ghList(`repos/${repository}/actions/runs?head_sha=${sha}&per_page=100`),
+  );
+
+  if (pages instanceof ScriptError) {
+    return [];
+  }
+
+  return pages.flatMap((page) => page.workflow_runs ?? []).map(runDetails);
+}
+
+/**
  * A run's state and workflow. A run the repository cannot serve (one a
  * workflow outside it started) reads as unknown, and its check runs
  * speak for it.
@@ -652,11 +696,17 @@ function readRun(repository, id) {
     gh(["api", `repos/${repository}/actions/runs/${id}`]),
   );
 
+  return run instanceof ScriptError
+    ? { id, status: null, url: null, path: null }
+    : runDetails(run);
+}
+
+function runDetails(run) {
   return {
-    id,
-    status: run?.status ?? null,
-    url: run?.html_url ?? null,
-    path: run?.path ?? null,
+    id: run.id,
+    status: run.status,
+    url: run.html_url,
+    path: workflowPath(run.path),
   };
 }
 
