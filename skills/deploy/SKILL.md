@@ -53,22 +53,9 @@ The artifact is the deploy path in one line. When none applies after that wait, 
 
 ## 4. Watch, and approve gates
 
-Watch the deploy as a background command until it ends, following `${CLAUDE_SKILL_DIR}/../../references/ci-watch.md` for Actions runs.
+Watch the merge commit as a background command until its runs end, following `${CLAUDE_SKILL_DIR}/../../references/ci-watch.md` with `--approve-gates`: this skill's invocation is the permission, so the script approves each gate the user can approve as the run reaches it, with a comment that names the PR.
 
-A run waiting for a manual approval lists its gates:
-
-```bash
-gh api 'repos/{owner}/{repo}/actions/runs/<run id>/pending_deployments'
-```
-
-Approve each gate the user can approve (`current_user_can_approve` is true):
-
-```bash
-gh api -X POST 'repos/{owner}/{repo}/actions/runs/<run id>/pending_deployments' \
-  -F "environment_ids[]=<environment id>" -f state=approved -f comment="Approved by ship-it deploy for PR #<number>"
-```
-
-When GitHub refuses, or `current_user_can_approve` is false (an environment that forbids approving your own deploy, or a reviewer list without the user), escalate as blocked with the run's URL. Never look for another way through: no other account, no admin bypass, no change to the environment's rules.
+A gate the script could not approve (`can_approve` false: an environment that forbids approving your own deploy, or a reviewer list without the user), or that GitHub refused, ends the watch as `gated`: escalate as blocked with the run's URL. Never look for another way through: no other account, no admin bypass, no change to the environment's rules.
 
 A failed deploy is escalated as blocked, with the failed job's log. When production ran part of the deploy and now misbehaves, it is a production problem instead.
 
