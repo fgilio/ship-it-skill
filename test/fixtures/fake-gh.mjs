@@ -4,7 +4,7 @@
 //
 // State (FAKE_GH_STATE, rewritten on every call):
 //   repo, labels, pr { number, state, headRefOid, base, labels }, reviews,
-//   comments, checkRuns, statuses, rules, protection,
+//   comments, checkRuns, statuses, rules, protection, runs,
 //   outcomes { <label>: [<outcome per request>] }
 //
 // Review outcomes: an outcome shows up `afterPolls` review listings after its
@@ -16,10 +16,12 @@
 // one poll. A check run with a `status` is served as is. Without one, its
 // status follows the poll count: hidden before `appearsAtPoll`, in progress
 // before `completesAtPoll`, then completed with its `conclusion`. A check with
-// `gate { environment, can_approve, waitsAtPoll }` waits from that poll until
-// its environment is approved, then completes on the next poll. A check with
-// `heldByGate` stays queued until its run has an approval, then completes two
-// polls later. The pull request's head moves at `headMovesAtPoll` and the pull
+// `gate { environment, can_approve, reviewers, waitsAtPoll, endsAtPoll }`
+// waits from `waitsAtPoll`: with reviewers, until its environment is approved,
+// then it completes on the next poll; without reviewers (a timer), until
+// `endsAtPoll`. A check with `heldByGate` stays queued until its run has an
+// approval, then completes two polls later. `runs[<id>].path` names a run's
+// workflow. The pull request's head moves at `headMovesAtPoll` and the pull
 // request closes at `closesAtPoll`.
 //
 // FAKE_GH_STALL_ON stalls any call whose arguments contain it.
@@ -40,6 +42,9 @@ if (process.env.FAKE_GH_LOG) {
   appendFileSync(process.env.FAKE_GH_LOG, `${JSON.stringify(args)}\n`);
 }
 
+const ACTIONS_APP_ID = 15368;
+const DEFAULT_REVIEWERS = [{ type: "Team", reviewer: { name: "Core Team" } }];
+
 const now = () => new Date().toISOString();
 const respond = (value) => process.stdout.write(`${JSON.stringify(value)}\n`);
 const refuse = (message) => {
@@ -51,6 +56,7 @@ const values = (name) =>
   args.flatMap((argument, index) =>
     argument === name ? [args[index + 1]] : [],
   );
+const paginated = () => args.includes("--paginate");
 
 function play() {
   for (const [label, request] of Object.entries(state.requests)) {
@@ -158,6 +164,10 @@ function visibleCheck(check) {
     conclusion,
     started_at: check.started_at ?? now(),
     output: check.output ?? { title: null },
+    app: {
+      id: check.app_id ?? (check.run_id ? ACTIONS_APP_ID : 777),
+      slug: check.run_id ? "github-actions" : "reviewbot",
+    },
     html_url: check.run_id
       ? `https://github.com/${state.repo}/actions/runs/${check.run_id}/job/${check.id}`
       : null,
@@ -186,9 +196,15 @@ function visibleCheck(check) {
         : served("in_progress");
     }
 
-    return poll >= (check.gate.waitsAtPoll ?? 1)
-      ? served("waiting")
-      : served("queued");
+    if (poll < (check.gate.waitsAtPoll ?? 1)) {
+      return served("queued");
+    }
+
+    const timerOnly = check.gate.reviewers?.length === 0;
+
+    return timerOnly && poll >= (check.gate.endsAtPoll ?? 2)
+      ? served("completed", "success")
+      : served("waiting");
   }
 
   if (check.heldByGate) {
@@ -245,8 +261,10 @@ function pendingDeployments(runId) {
 
     environments.set(check.gate.environment.id, {
       environment: check.gate.environment,
-      wait_timer: 0,
+      wait_timer: check.gate.wait_timer ?? 0,
+      wait_timer_started_at: null,
       current_user_can_approve: check.gate.can_approve ?? true,
+      reviewers: check.gate.reviewers ?? DEFAULT_REVIEWERS,
     });
   }
 
@@ -299,6 +317,7 @@ function answerActionsRun(method, path) {
     id: runId,
     status: runStatus(runId),
     html_url: `https://github.com/${state.repo}/actions/runs/${runId}`,
+    path: state.runs?.[runId]?.path ?? ".github/workflows/ci.yml",
   });
 }
 
@@ -359,17 +378,20 @@ function answer() {
       return respond([{ total_count: checks.length, check_runs: checks }]);
     }
 
-    if (path.endsWith("/status")) {
+    if (path.includes("/status")) {
       const sha = path.split("/commits/")[1].split("/")[0];
       const statuses = (state.statuses ?? []).filter(
         (status) => !status.sha || status.sha === sha,
       );
+      const combined = { state: "pending", statuses };
 
-      return respond({ state: "pending", statuses });
+      return respond(paginated() ? [combined] : combined);
     }
 
     if (path.includes("/rules/branches/")) {
-      return respond(state.rules ?? []);
+      const rules = state.rules ?? [];
+
+      return respond(paginated() ? [rules] : rules);
     }
 
     if (path.includes("/protection/required_status_checks")) {
