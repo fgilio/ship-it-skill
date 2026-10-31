@@ -1,15 +1,28 @@
 #!/usr/bin/env node
-// Stands in for the GitHub CLI: answers the calls the review scripts make from
-// a state file, and plays each label's scripted outcome once it is requested.
+// Stands in for the GitHub CLI: answers the calls the scripts make from a
+// state file, and plays each scripted outcome at its poll.
 //
 // State (FAKE_GH_STATE, rewritten on every call):
-//   repo, labels, pr { number, state, headRefOid, labels }, reviews, comments,
-//   checkRuns, outcomes { <label>: [<outcome per request>] }
-// An outcome shows up `afterPolls` review listings after its request, and holds
-// one of: review {}, refusal "<reason>", check { conclusion, title },
-// headMovesTo "<sha>", state "<pull request state>". labelPages, when set,
-// replaces the one page of labels. FAKE_GH_STALL_ON stalls any call whose
-// arguments contain it.
+//   repo, labels, pr { number, state, headRefOid, base, labels }, reviews,
+//   comments, checkRuns, statuses, rules, protection,
+//   outcomes { <label>: [<outcome per request>] }
+//
+// Review outcomes: an outcome shows up `afterPolls` review listings after its
+// request, and holds one of: review {}, refusal "<reason>", check
+// { conclusion, title }, headMovesTo "<sha>", state "<pull request state>".
+// labelPages, when set, replaces the one page of labels.
+//
+// CI watch: every listing of a commit's check runs without a name filter is
+// one poll. A check run with a `status` is served as is. Without one, its
+// status follows the poll count: hidden before `appearsAtPoll`, in progress
+// before `completesAtPoll`, then completed with its `conclusion`. A check with
+// `gate { environment, can_approve, waitsAtPoll }` waits from that poll until
+// its environment is approved, then completes on the next poll. A check with
+// `heldByGate` stays queued until its run has an approval, then completes two
+// polls later. The pull request's head moves at `headMovesAtPoll` and the pull
+// request closes at `closesAtPoll`.
+//
+// FAKE_GH_STALL_ON stalls any call whose arguments contain it.
 
 import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 
@@ -18,8 +31,10 @@ const statePath = process.env.FAKE_GH_STATE;
 const state = JSON.parse(readFileSync(statePath, "utf8"));
 
 state.polls ??= 0;
+state.watchPolls ??= 0;
 state.requests ??= {};
 state.played ??= [];
+state.approvals ??= [];
 
 if (process.env.FAKE_GH_LOG) {
   appendFileSync(process.env.FAKE_GH_LOG, `${JSON.stringify(args)}\n`);
@@ -27,6 +42,10 @@ if (process.env.FAKE_GH_LOG) {
 
 const now = () => new Date().toISOString();
 const respond = (value) => process.stdout.write(`${JSON.stringify(value)}\n`);
+const refuse = (message) => {
+  process.stderr.write(`${message}\n`);
+  process.exitCode = 1;
+};
 const option = (name) => args[args.indexOf(name) + 1];
 const values = (name) =>
   args.flatMap((argument, index) =>
@@ -125,15 +144,170 @@ function completeCheck(label, conclusion, title) {
   });
 }
 
+/**
+ * The check run as the API would serve it at this poll, or null while
+ * it has not registered.
+ */
+function visibleCheck(check) {
+  const poll = state.watchPolls;
+  const served = (status, conclusion = null) => ({
+    id: check.id,
+    name: check.name,
+    head_sha: check.head_sha,
+    status,
+    conclusion,
+    started_at: check.started_at ?? now(),
+    output: check.output ?? { title: null },
+    html_url: check.run_id
+      ? `https://github.com/${state.repo}/actions/runs/${check.run_id}/job/${check.id}`
+      : null,
+    details_url:
+      check.details_url ?? `https://reviewbot.example/runs/${check.id}`,
+  });
+
+  if (check.status) {
+    return served(check.status, check.conclusion ?? null);
+  }
+
+  if (poll < (check.appearsAtPoll ?? 1)) {
+    return null;
+  }
+
+  if (check.gate) {
+    const approval = state.approvals.find(
+      (approval) =>
+        approval.run_id === check.run_id &&
+        approval.environment_id === check.gate.environment.id,
+    );
+
+    if (approval) {
+      return poll > approval.atPoll
+        ? served("completed", "success")
+        : served("in_progress");
+    }
+
+    return poll >= (check.gate.waitsAtPoll ?? 1)
+      ? served("waiting")
+      : served("queued");
+  }
+
+  if (check.heldByGate) {
+    const approval = state.approvals.find(
+      (approval) => approval.run_id === check.run_id,
+    );
+
+    if (!approval) {
+      return served("queued");
+    }
+
+    return poll > approval.atPoll + 1
+      ? served("completed", "success")
+      : served("in_progress");
+  }
+
+  return poll >= (check.completesAtPoll ?? 1)
+    ? served("completed", check.conclusion ?? "success")
+    : served("in_progress");
+}
+
+function visibleChecks(sha) {
+  return state.checkRuns
+    .map(visibleCheck)
+    .filter((check) => check && check.head_sha === sha);
+}
+
+function runStatus(runId) {
+  const checks = state.checkRuns
+    .filter((check) => check.run_id === runId)
+    .map(visibleCheck)
+    .filter(Boolean);
+
+  if (checks.some((check) => check.status === "waiting")) {
+    return "waiting";
+  }
+
+  return checks.every((check) => check.status === "completed")
+    ? "completed"
+    : "in_progress";
+}
+
+function pendingDeployments(runId) {
+  const environments = new Map();
+
+  for (const check of state.checkRuns) {
+    if (
+      check.run_id !== runId ||
+      !check.gate ||
+      visibleCheck(check)?.status !== "waiting"
+    ) {
+      continue;
+    }
+
+    environments.set(check.gate.environment.id, {
+      environment: check.gate.environment,
+      wait_timer: 0,
+      current_user_can_approve: check.gate.can_approve ?? true,
+    });
+  }
+
+  return [...environments.values()];
+}
+
+function answerPullRequest() {
+  const poll = state.watchPolls;
+  const head =
+    state.pr.headMovesAtPoll !== undefined && poll >= state.pr.headMovesAtPoll
+      ? state.pr.headMovesTo
+      : state.pr.headRefOid;
+  const prState =
+    state.pr.closesAtPoll !== undefined && poll >= state.pr.closesAtPoll
+      ? (state.pr.closesAs ?? "MERGED")
+      : state.pr.state;
+
+  return respond({
+    state: prState === "OPEN" ? "open" : "closed",
+    merged: prState === "MERGED",
+    head: { sha: head },
+    base: { ref: state.pr.base ?? "main" },
+  });
+}
+
+function answerActionsRun(method, path) {
+  const runId = Number(path.split("/actions/runs/")[1].split("/")[0]);
+
+  if (path.endsWith("/pending_deployments")) {
+    if (method === "POST") {
+      for (const field of values("-F")) {
+        if (!field.startsWith("environment_ids[]=")) {
+          continue;
+        }
+
+        state.approvals.push({
+          run_id: runId,
+          environment_id: Number(field.slice("environment_ids[]=".length)),
+          atPoll: state.watchPolls,
+        });
+      }
+
+      return respond([]);
+    }
+
+    return respond(pendingDeployments(runId));
+  }
+
+  return respond({
+    id: runId,
+    status: runStatus(runId),
+    html_url: `https://github.com/${state.repo}/actions/runs/${runId}`,
+  });
+}
+
 function answer() {
   const [command, subcommand] = args;
 
   // Claude Code on the web refuses GraphQL, which gh pr and gh repo call
   if (command === "pr" || command === "repo" || subcommand === "graphql") {
-    process.stderr.write("HTTP 403: GitHub GraphQL is not available\n");
-    process.exitCode = 1;
-
-    return;
+    return refuse("HTTP 403: GitHub GraphQL is not available");
   }
 
   if (command === "api") {
@@ -145,11 +319,7 @@ function answer() {
     }
 
     if (path.endsWith(`/pulls/${state.pr.number}`)) {
-      return respond({
-        state: state.pr.state === "OPEN" ? "open" : "closed",
-        merged: state.pr.state === "MERGED",
-        head: { sha: state.pr.headRefOid },
-      });
+      return answerPullRequest();
     }
 
     if (path.includes("/issues/") && path.includes("/labels")) {
@@ -172,19 +342,48 @@ function answer() {
     }
 
     if (path.includes("/check-runs")) {
-      const name = decodeURIComponent(path.split("check_name=")[1]);
       const sha = path.split("/commits/")[1].split("/")[0];
 
-      return respond({
-        check_runs: state.checkRuns.filter(
-          (check) => check.name === name && check.head_sha === sha,
-        ),
-      });
+      if (path.includes("check_name=")) {
+        const name = decodeURIComponent(path.split("check_name=")[1]);
+
+        return respond({
+          check_runs: visibleChecks(sha).filter((check) => check.name === name),
+        });
+      }
+
+      state.watchPolls++;
+
+      const checks = visibleChecks(sha);
+
+      return respond([{ total_count: checks.length, check_runs: checks }]);
+    }
+
+    if (path.endsWith("/status")) {
+      const sha = path.split("/commits/")[1].split("/")[0];
+      const statuses = (state.statuses ?? []).filter(
+        (status) => !status.sha || status.sha === sha,
+      );
+
+      return respond({ state: "pending", statuses });
+    }
+
+    if (path.includes("/rules/branches/")) {
+      return respond(state.rules ?? []);
+    }
+
+    if (path.includes("/protection/required_status_checks")) {
+      return state.protection
+        ? respond(state.protection)
+        : refuse("HTTP 404: Branch not protected");
+    }
+
+    if (path.includes("/actions/runs/")) {
+      return answerActionsRun(method, path);
     }
   }
 
-  process.stderr.write(`fake gh does not know: gh ${args.join(" ")}\n`);
-  process.exitCode = 1;
+  refuse(`fake gh does not know: gh ${args.join(" ")}`);
 }
 
 if (
