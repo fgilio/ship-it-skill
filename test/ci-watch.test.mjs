@@ -845,6 +845,31 @@ describe("ship-it-ci-watch.mjs on a commit", () => {
     assert.match(output.gates[0].approval_error, /refused the approval/);
   });
 
+  test("reports a run that failed before any job ran", async () => {
+    writeState({
+      runs: {
+        [OTHER_RUN]: {
+          path: ".github/workflows/deploy.yml",
+          conclusion: "startup_failure",
+        },
+      },
+      checkRuns: [check("build", { completesAtPoll: 1 })],
+    });
+
+    const output = await watch(HEAD);
+
+    assert.equal(output.result, "failed");
+    assert.deepEqual(output.failed, [
+      {
+        name: ".github/workflows/deploy.yml",
+        conclusion: "startup_failure",
+        url: `https://github.com/acme/shop/actions/runs/${OTHER_RUN}`,
+        run_id: OTHER_RUN,
+        job_id: null,
+      },
+    ]);
+  });
+
   test("reports none when no check registers", async () => {
     writeState();
 

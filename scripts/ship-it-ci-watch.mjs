@@ -58,6 +58,15 @@ const WORKFLOW_PATH = /(\.github\/workflows\/[^@]+)/;
 // GitHub counts these as passing for a required check.
 const PASSING_CONCLUSIONS = new Set(["success", "neutral", "skipped"]);
 
+// A run that ends one of these ways before any job ran leaves no check
+// run to say so.
+const FAILED_RUN_CONCLUSIONS = new Set([
+  "failure",
+  "startup_failure",
+  "timed_out",
+  "action_required",
+]);
+
 class Watch {
   checks = [];
   runs = new Map();
@@ -200,14 +209,17 @@ class Watch {
   }
 
   /**
-   * The open runs the watch waits for: the required workflows' runs, or
-   * every run when the merge requires nothing in particular.
+   * Whether the watch waits for the run: the required workflows' runs,
+   * or every run when the merge requires nothing in particular.
    */
-  get watchedRuns() {
-    return this.openRuns.filter(
-      (run) =>
-        !this.requiresAny || this.subject.required.workflows.includes(run.path),
+  isRunWatched(run) {
+    return (
+      !this.requiresAny || this.subject.required.workflows.includes(run.path)
     );
+  }
+
+  get watchedRuns() {
+    return this.openRuns.filter((run) => this.isRunWatched(run));
   }
 
   /**
@@ -268,6 +280,22 @@ class Watch {
       (check) =>
         check.status === "completed" &&
         !PASSING_CONCLUSIONS.has(check.conclusion),
+    );
+  }
+
+  /**
+   * The watched runs that failed with no failed check to show for it: a
+   * workflow that failed before any job ran.
+   */
+  get failedRuns() {
+    const failedRunIds = new Set(this.failed.map(({ run_id }) => run_id));
+
+    return [...this.runs.values()].filter(
+      (run) =>
+        run.status === "completed" &&
+        FAILED_RUN_CONCLUSIONS.has(run.conclusion) &&
+        this.isRunWatched(run) &&
+        !failedRunIds.has(run.id),
     );
   }
 
@@ -337,13 +365,22 @@ class Watch {
       required: [...contexts.map(({ name }) => name), ...workflows],
       watched: this.watched.map(({ name }) => name),
       passed: this.passed.map(({ name }) => name),
-      failed: this.failed.map(({ name, conclusion, url, run_id, job_id }) => ({
-        name,
-        conclusion,
-        url,
-        run_id,
-        job_id,
-      })),
+      failed: [
+        ...this.failed.map(({ name, conclusion, url, run_id, job_id }) => ({
+          name,
+          conclusion,
+          url,
+          run_id,
+          job_id,
+        })),
+        ...this.failedRuns.map(({ id, path, conclusion, url }) => ({
+          name: path ?? `run ${id}`,
+          conclusion,
+          url,
+          run_id: id,
+          job_id: null,
+        })),
+      ],
       pending: [
         ...[...this.pending, ...this.gatedWatched].map(
           ({ name, status, url }) => ({ name, status, url }),
@@ -411,7 +448,7 @@ main(async () => {
     }
 
     // A failed required check needs a fix whether or not the rest registered.
-    if (watch.failed.length > 0) {
+    if (watch.failed.length > 0 || watch.failedRuns.length > 0) {
       return watch.finish("failed");
     }
 
@@ -697,7 +734,7 @@ function readRun(repository, id) {
   );
 
   return run instanceof ScriptError
-    ? { id, status: null, url: null, path: null }
+    ? { id, status: null, conclusion: null, url: null, path: null }
     : runDetails(run);
 }
 
@@ -705,6 +742,7 @@ function runDetails(run) {
   return {
     id: run.id,
     status: run.status,
+    conclusion: run.conclusion ?? null,
     url: run.html_url,
     path: workflowPath(run.path),
   };

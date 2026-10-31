@@ -24,8 +24,8 @@
 // an approval, then completes two polls later. A run exists for every run id
 // a check names, and for every entry of `runs`, which holds a run's workflow
 // `path`, `missing` for a run the repository cannot serve, `appearsAtPoll`
-// for one created late, and `refusesApproval` for one whose environment
-// refuses the approval. A run is in progress while any of its checks has not
+// for one created late, `conclusion` for one that ended with no job, and
+// `refusesApproval` for one whose environment refuses the approval. A run is in progress while any of its checks has not
 // registered. The pull request's head moves at `headMovesAtPoll` and the pull
 // request closes at `closesAtPoll`.
 //
@@ -271,9 +271,29 @@ function runStatus(runId) {
 }
 
 function runDetails(runId) {
+  const status = runStatus(runId);
+  // The run's conclusion follows its latest attempt of each job.
+  const latest = new Map();
+
+  for (const check of state.checkRuns.filter((run) => run.run_id === runId)) {
+    const visible = visibleCheck(check);
+
+    if (visible && (latest.get(check.name)?.id ?? 0) < visible.id) {
+      latest.set(check.name, visible);
+    }
+  }
+
+  const failed = [...latest.values()].some(
+    (check) => !["success", "neutral", "skipped"].includes(check.conclusion),
+  );
+
   return {
     id: runId,
-    status: runStatus(runId),
+    status,
+    conclusion:
+      status === "completed"
+        ? (state.runs?.[runId]?.conclusion ?? (failed ? "failure" : "success"))
+        : null,
     html_url: `https://github.com/${state.repo}/actions/runs/${runId}`,
     path: state.runs?.[runId]?.path ?? ".github/workflows/ci.yml",
   };
@@ -329,9 +349,10 @@ function answerActionsRuns(method, path) {
       .filter(
         (runId) =>
           runExists(runId) &&
-          state.checkRuns.some(
-            (check) => check.run_id === runId && check.head_sha === sha,
-          ),
+          (state.runs?.[runId] ||
+            state.checkRuns.some(
+              (check) => check.run_id === runId && check.head_sha === sha,
+            )),
       )
       .map(runDetails);
 
