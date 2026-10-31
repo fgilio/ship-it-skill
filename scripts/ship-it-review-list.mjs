@@ -3,7 +3,7 @@
 
 import {
   FOCUS_ORDER,
-  ReviewError,
+  ScriptError,
   ghList,
   main,
   parseArguments,
@@ -31,7 +31,7 @@ main(async () => {
   });
 
   if (positionals.length > 0) {
-    throw new ReviewError(
+    throw new ScriptError(
       `ship-it-review-list.mjs takes no arguments.\n\n${USAGE}`,
     );
   }

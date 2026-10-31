@@ -2,7 +2,7 @@
 // Requests reviews through their labels and waits until each one answers.
 
 import {
-  ReviewError,
+  ScriptError,
   gh,
   ghList,
   main,
@@ -46,7 +46,7 @@ main(async () => {
   const [pullRequestArgument, ...labelNames] = positionals;
 
   if (pullRequestArgument === undefined || labelNames.length === 0) {
-    throw new ReviewError(
+    throw new ScriptError(
       `ship-it-review-run.mjs needs a pull request and at least one label.\n\n${USAGE}`,
     );
   }
@@ -197,7 +197,7 @@ function retryCount(value) {
   const count = Number(value);
 
   if (!Number.isInteger(count) || count < 0) {
-    throw new ReviewError(
+    throw new ScriptError(
       `The --retries option needs a whole number of 0 or more, got "${value}".\n\n${USAGE}`,
     );
   }
@@ -209,7 +209,7 @@ function openHead(repository, number) {
   const pullRequest = readPullRequest(repository, number);
 
   if (pullRequest.state !== "open") {
-    throw new ReviewError(
+    throw new ScriptError(
       `Pull request #${number} on ${repository} is ${pullRequest.state}. Reviews run only on an open pull request.`,
     );
   }
@@ -238,13 +238,13 @@ function reviewRequests(repository, labelNames) {
     const parsed = parseReviewLabel(label);
 
     if (!parsed) {
-      throw new ReviewError(
+      throw new ScriptError(
         `${label} is not a review label. A review label looks like <service>-review:<kind>.`,
       );
     }
 
     if (!existing.has(label)) {
-      throw new ReviewError(
+      throw new ScriptError(
         `The label ${label} does not exist on ${repository}. ship-it-review-list.mjs lists the review labels it offers.`,
       );
     }
