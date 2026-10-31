@@ -26,7 +26,7 @@ It waits up to 45 minutes, so start it as a background command and act on its ou
 
 ## Manual gates
 
-A job that waits for an environment's reviewers is a manual gate, never CI. The script lists every gate it meets in `gates`: the run, its environment, whether the user can approve it (`can_approve`), the jobs that wait and the jobs the gate holds back. It waits for a gate only when the merge requires it, or on a commit's watch, where the run cannot end without it. An environment's wait timer is not a gate: the job goes on by itself, and the watch waits through it.
+A job that waits for an environment's reviewers is a manual gate, never CI. The script lists every gate it meets in `gates`: the run, its environment, whether the user can approve it (`can_approve`), and the jobs that wait. The jobs behind a gate register only once it is approved, so a queued job is queued for a runner and the watch keeps it. It waits for a gate only when the merge requires it, or on a commit's watch, where the run cannot end without it. An environment's wait timer is not a gate: the job goes on by itself, and the watch waits through it.
 
 The report names each gate with its environment and URL, approved or not. Approving one has effects beyond CI (a deploy to that environment), so it takes the user's permission:
 

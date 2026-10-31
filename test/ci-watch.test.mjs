@@ -133,7 +133,6 @@ describe("ship-it-ci-watch.mjs on a pull request", () => {
         can_approve: true,
         approved: false,
         jobs: ["approve-preview"],
-        blocked: ["deploy-preview"],
       },
     ]);
     assert.deepEqual(approvals(), []);
@@ -315,7 +314,6 @@ describe("ship-it-ci-watch.mjs on a pull request", () => {
     assert.deepEqual(output.required, []);
     assert.deepEqual(output.watched, ["lint", "test"]);
     assert.deepEqual(output.gates[0].jobs, ["approve-preview"]);
-    assert.deepEqual(output.gates[0].blocked, ["deploy-preview"]);
     assert.ok(
       sandbox
         .ghCalls()
@@ -502,6 +500,61 @@ describe("ship-it-ci-watch.mjs on a pull request", () => {
       result.stderr,
       /--approve-gates option needs environment names/,
     );
+  });
+
+  test("watches a queued job of a run that waits for a reviewer", async () => {
+    writeState({
+      checkRuns: [
+        check("lint", { completesAtPoll: 1 }),
+        gate("approve-preview"),
+        check("test", {
+          status: undefined,
+          appearsAtPoll: 1,
+          completesAtPoll: 4,
+          queuedUntil: 3,
+        }),
+      ],
+    });
+
+    const output = await watch();
+
+    assert.equal(output.result, "passed");
+    assert.deepEqual(output.passed, ["lint", "test"]);
+    assert.deepEqual(output.gates[0].jobs, ["approve-preview"]);
+  });
+
+  test("matches a required workflow whose run names its path with a ref", async () => {
+    writeState({
+      rules: [requireWorkflows(SECRET_SCAN)],
+      runs: { [OTHER_RUN]: { path: `${SECRET_SCAN}@main` } },
+      checkRuns: [
+        check("gitleaks", { run_id: OTHER_RUN, completesAtPoll: 2 }),
+        check("lint", { completesAtPoll: 1 }),
+      ],
+    });
+
+    const output = await watch();
+
+    assert.equal(output.result, "passed");
+    assert.deepEqual(output.required, [SECRET_SCAN]);
+    assert.deepEqual(output.passed, ["gitleaks"]);
+  });
+
+  test("keeps a refused approval on the gate and reports the watch", async () => {
+    writeState({
+      runs: { [RUN]: { refusesApproval: true } },
+      checkRuns: [
+        check("lint", { completesAtPoll: 1 }),
+        gate("approve-preview"),
+      ],
+    });
+
+    const output = await watch("7", ["--approve-gates"]);
+
+    assert.equal(output.result, "passed");
+    assert.equal(output.gates[0].approved, false);
+    assert.match(output.gates[0].approval_error, /refused the approval/);
+    assert.equal(approvals().length, 1);
   });
 
   test("waits through an environment's timer, which ends on its own", async () => {
@@ -707,17 +760,10 @@ describe("ship-it-ci-watch.mjs on a commit", () => {
     assert.equal(output.result, "gated");
     assert.equal(output.commit, HEAD);
     assert.equal(output.pull_request, undefined);
-    assert.deepEqual(output.watched, [
-      "approve-production",
-      "deploy-production",
-      "test",
-    ]);
+    assert.deepEqual(output.watched, ["approve-production", "test"]);
     assert.deepEqual(
       output.pending.map(({ name, status }) => ({ name, status })),
-      [
-        { name: "approve-production", status: "waiting" },
-        { name: "deploy-production", status: "queued" },
-      ],
+      [{ name: "approve-production", status: "waiting" }],
     );
     assert.equal(output.gates[0].environment, "production");
     assert.equal(
@@ -761,6 +807,42 @@ describe("ship-it-ci-watch.mjs on a commit", () => {
 
     assert.equal(output.result, "passed");
     assert.deepEqual(output.passed, ["build", "deploy"]);
+  });
+
+  test("waits for a run that exists before its first job registers", async () => {
+    writeState({
+      runs: { [OTHER_RUN]: { path: ".github/workflows/deploy.yml" } },
+      checkRuns: [
+        check("build", { completesAtPoll: 1 }),
+        check("deploy", {
+          run_id: OTHER_RUN,
+          appearsAtPoll: 3,
+          completesAtPoll: 4,
+        }),
+      ],
+    });
+
+    const output = await watch(HEAD);
+
+    assert.equal(output.result, "passed");
+    assert.deepEqual(output.passed, ["build", "deploy"]);
+  });
+
+  test("ends a commit's watch as gated when the approval is refused", async () => {
+    writeState({
+      runs: { [RUN]: { refusesApproval: true } },
+      checkRuns: [
+        check("test", { completesAtPoll: 1 }),
+        gate("approve-production", {
+          gate: { environment: PRODUCTION, can_approve: true },
+        }),
+      ],
+    });
+
+    const output = await watch(HEAD, ["--approve-gates"]);
+
+    assert.equal(output.result, "gated");
+    assert.match(output.gates[0].approval_error, /refused the approval/);
   });
 
   test("reports none when no check registers", async () => {
