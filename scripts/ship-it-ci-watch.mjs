@@ -72,7 +72,6 @@ class Watch {
   runs = new Map();
   gates = new Map();
   runsWaitingForReviewers = new Set();
-  runIdsWithChecks = new Set();
 
   constructor(repository, subject) {
     this.repository = repository;
@@ -106,9 +105,6 @@ class Watch {
       check.workflow_path = this.runs.get(check.run_id)?.path ?? null;
     }
 
-    this.runIdsWithChecks = new Set(
-      found.map(({ run_id }) => run_id).filter(Boolean),
-    );
     this.checks = latestOfEach(found);
     this.runsWaitingForReviewers = new Set();
 
@@ -293,19 +289,20 @@ class Watch {
   }
 
   /**
-   * The watched runs that failed before any job ran, so no check run
-   * says so. A run with jobs speaks through them, and a run a newer run
-   * of the same workflow replaced no longer counts.
+   * The watched runs that failed with no failed check to say so: a
+   * workflow that failed before a job ran, or after its jobs passed. A
+   * run a newer run of the same workflow replaced no longer counts.
    */
   get failedRuns() {
     const runs = [...this.runs.values()];
+    const failedRunIds = new Set(this.failed.map(({ run_id }) => run_id));
 
     return runs.filter(
       (run) =>
         run.status === "completed" &&
         FAILED_RUN_CONCLUSIONS.has(run.conclusion) &&
         this.isRunWatched(run) &&
-        !this.runIdsWithChecks.has(run.id) &&
+        !failedRunIds.has(run.id) &&
         !runs.some((other) => other.path === run.path && other.id > run.id),
     );
   }

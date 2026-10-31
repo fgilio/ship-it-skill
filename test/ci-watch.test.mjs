@@ -897,6 +897,22 @@ describe("ship-it-ci-watch.mjs on a commit", () => {
     assert.deepEqual(output.failed, []);
   });
 
+  test("reports a run that failed after its jobs passed", async () => {
+    writeState({
+      runs: { [RUN]: { conclusion: "failure" } },
+      checkRuns: [check("setup", { completesAtPoll: 1 })],
+    });
+
+    const output = await watch(HEAD);
+
+    assert.equal(output.result, "failed");
+    assert.deepEqual(output.passed, ["setup"]);
+    assert.deepEqual(
+      output.failed.map(({ name, conclusion }) => ({ name, conclusion })),
+      [{ name: ".github/workflows/ci.yml", conclusion: "failure" }],
+    );
+  });
+
   test("reports a run that failed before any job ran", async () => {
     writeState({
       runs: {
