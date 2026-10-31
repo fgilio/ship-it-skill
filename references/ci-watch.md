@@ -32,9 +32,9 @@ The report names each gate with its environment and URL, approved or not. Approv
 
 - The `deploy` skill's invocation, which covers the deploy's gates.
 - `gates: approve` in a land run file, or `--approve-gates` passed to the skill.
-- Otherwise, when `can_approve` is true, one AskUserQuestion per invocation, at the first gate met: it names the PR or commit, the gate, its environment and what approving does (the environment's URL when GitHub shows one), and offers to approve every gate this invocation meets, to leave them, or to ask at each one. The answer holds for the rest of the invocation.
+- Otherwise, when `can_approve` is true, one AskUserQuestion per invocation, at the first gate met: it names the PR or commit, the gate, its environment and what approving does (the environment's URL when GitHub shows one), and offers to approve every gate this invocation meets, to leave them, or to decide each gate as it comes. The answer holds for the rest of the invocation.
 
-To approve, run the script again with `--approve-gates`: it approves each gate the user can approve through the run's pending deployments, marks it `approved`, and watches on. A gate the user cannot approve stays listed: escalate as blocked when the result is `gated`, and name it in the report otherwise. Never look for another way through: no other account, no admin bypass, no change to the environment's rules.
+To approve, run the script again with `--approve-gates` for every gate, or `--approve-gates=<environment>` for the gates the user chose (several names with commas): it approves each of those the user can approve through the run's pending deployments, marks it `approved`, and watches on. With "each gate as it comes", a gate of another environment asks again before anything approves it. A gate the user cannot approve stays listed: escalate as blocked when the result is `gated`, and name it in the report otherwise. Never look for another way through: no other account, no admin bypass, no change to the environment's rules.
 
 ## No-op merges
 

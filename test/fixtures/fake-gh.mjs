@@ -20,9 +20,11 @@
 // waits from `waitsAtPoll`: with reviewers, until its environment is approved,
 // then it completes on the next poll; without reviewers (a timer), until
 // `endsAtPoll`. A check with `heldByGate` stays queued until its run has an
-// approval, then completes two polls later. `runs[<id>].path` names a run's
-// workflow. The pull request's head moves at `headMovesAtPoll` and the pull
-// request closes at `closesAtPoll`.
+// approval, then completes two polls later. `runs[<id>]` holds a run's
+// workflow `path`, or `missing` for a run the repository cannot serve. A run
+// is in progress while any of its checks has not registered. The pull
+// request's head moves at `headMovesAtPoll` and the pull request closes at
+// `closesAtPoll`.
 //
 // FAKE_GH_STALL_ON stalls any call whose arguments contain it.
 
@@ -235,14 +237,13 @@ function visibleChecks(sha) {
 function runStatus(runId) {
   const checks = state.checkRuns
     .filter((check) => check.run_id === runId)
-    .map(visibleCheck)
-    .filter(Boolean);
+    .map(visibleCheck);
 
-  if (checks.some((check) => check.status === "waiting")) {
+  if (checks.some((check) => check?.status === "waiting")) {
     return "waiting";
   }
 
-  return checks.every((check) => check.status === "completed")
+  return checks.every((check) => check?.status === "completed")
     ? "completed"
     : "in_progress";
 }
@@ -311,6 +312,10 @@ function answerActionsRun(method, path) {
     }
 
     return respond(pendingDeployments(runId));
+  }
+
+  if (state.runs?.[runId]?.missing) {
+    return refuse("HTTP 404: Not Found");
   }
 
   return respond({

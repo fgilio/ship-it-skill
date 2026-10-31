@@ -33,7 +33,8 @@ For a commit, the watch covers every check except a review service's,
 gates included, so a run that waits for a reviewer ends it as "gated".
 
 --approve-gates approves each gate the user can approve, with the
-environment's pending deployment, and keeps watching.
+environment's pending deployment, and keeps watching. With a value, it
+approves the named environments only.
 
 Results: passed, failed, gated, none (no check registered in time),
 timeout, superseded (the head moved) and closed (the pull request closed).
@@ -43,11 +44,11 @@ Arguments:
   <commit>         A commit SHA of 7 to 40 hex digits
 
 Options:
-  --repo owner/name      The repository (default: the URL's, or the current directory's)
-  --timeout <minutes>    How long the watch waits in all (default: 45)
-  --interval <seconds>   Time between reads (default: 30)
-  --register <minutes>   How long the checks get to register while nothing runs (default: 2)
-  --approve-gates        Approve each manual gate the user can approve
+  --repo owner/name                 The repository (default: the URL's, or the current directory's)
+  --timeout <minutes>               How long the watch waits in all (default: 45)
+  --interval <seconds>              Time between reads (default: 30)
+  --register <minutes>              How long the checks get to register while nothing runs (default: 2)
+  --approve-gates[=<environment>,...]  Approve each manual gate the user can approve, or those of the named environments
 `;
 
 const COMMIT_SHA = /^[0-9a-f]{7,40}$/i;
@@ -72,22 +73,23 @@ class Watch {
    * and the gates of every run that waits for reviewers.
    */
   read() {
-    this.checks = latestOfEach([
+    const found = [
       ...checkRuns(this.repository, this.subject.sha),
       ...commitStatuses(this.repository, this.subject.sha),
-    ]);
+    ];
 
     // A run's workflow never changes, so a completed run is read once.
-    for (const id of new Set(this.checks.map(({ run_id }) => run_id))) {
+    for (const id of new Set(found.map(({ run_id }) => run_id))) {
       if (id && this.runs.get(id)?.status !== "completed") {
         this.runs.set(id, readRun(this.repository, id));
       }
     }
 
-    for (const check of this.checks) {
+    for (const check of found) {
       check.workflow_path = this.runs.get(check.run_id)?.path ?? null;
     }
 
+    this.checks = latestOfEach(found);
     this.runsWaitingForReviewers = new Set();
 
     for (const run of this.runs.values()) {
@@ -177,6 +179,31 @@ class Watch {
   }
 
   /**
+   * The runs still going whose jobs may yet register: a job's check run
+   * appears once the job is queued, so a run with every known job done
+   * can still hold one that needs them.
+   */
+  get openRuns() {
+    return [...this.runs.values()].filter(
+      (run) =>
+        run.status !== null &&
+        run.status !== "completed" &&
+        !this.runsWaitingForReviewers.has(run.id),
+    );
+  }
+
+  /**
+   * The open runs the watch waits for: the required workflows' runs, or
+   * every run when the merge requires nothing in particular.
+   */
+  get watchedRuns() {
+    return this.openRuns.filter(
+      (run) =>
+        !this.requiresAny || this.subject.required.workflows.includes(run.path),
+    );
+  }
+
+  /**
    * The required contexts and workflows no check answers for yet.
    */
   get missing() {
@@ -206,15 +233,18 @@ class Watch {
   }
 
   /**
-   * Whether any check still runs on its own, so a required check that
-   * registers once its dependencies finish may still come.
+   * Whether anything still runs on its own, so a check that registers
+   * once its dependencies finish may still come.
    */
   get anyRunning() {
-    return this.checks.some(
-      (check) =>
-        check.status !== "completed" &&
-        !parseReviewLabel(check.name) &&
-        !this.isHeldByGate(check),
+    return (
+      this.openRuns.length > 0 ||
+      this.checks.some(
+        (check) =>
+          check.status !== "completed" &&
+          !parseReviewLabel(check.name) &&
+          !this.isHeldByGate(check),
+      )
     );
   }
 
@@ -245,14 +275,19 @@ class Watch {
   }
 
   /**
-   * Approves each gate the user can approve, and says how many it
-   * approved, so the next read sees the run move on.
+   * Approves each gate the user can approve, all of them or those of the
+   * named environments, and says how many it approved, so the next read
+   * sees the run move on.
    */
-  approveGates() {
+  approveGates(environments) {
     let approved = 0;
 
     for (const gate of this.gates.values()) {
-      if (gate.approved || !gate.can_approve) {
+      if (
+        gate.approved ||
+        !gate.can_approve ||
+        (environments !== null && !environments.includes(gate.environment))
+      ) {
         continue;
       }
 
@@ -293,9 +328,16 @@ class Watch {
         run_id,
         job_id,
       })),
-      pending: [...this.pending, ...this.gatedWatched].map(
-        ({ name, status, url }) => ({ name, status, url }),
-      ),
+      pending: [
+        ...[...this.pending, ...this.gatedWatched].map(
+          ({ name, status, url }) => ({ name, status, url }),
+        ),
+        ...this.watchedRuns.map(({ id, path, status, url }) => ({
+          name: path ?? `run ${id}`,
+          status,
+          url,
+        })),
+      ],
       missing: this.missing,
       gates: [...this.gates.values()],
     });
@@ -306,7 +348,7 @@ main(async () => {
   const { flags, positionals } = parseArguments(process.argv.slice(2), {
     usage: USAGE,
     valueFlags: ["repo", "timeout", "interval", "register"],
-    booleanFlags: ["approve-gates"],
+    optionalValueFlags: ["approve-gates"],
   });
   const [target] = positionals;
 
@@ -326,7 +368,7 @@ main(async () => {
   );
   const registerMs =
     positiveNumber(flags.register ?? 2, "register", USAGE) * 60_000;
-  const approveGates = flags["approve-gates"] === true;
+  const approving = approvedEnvironments(flags["approve-gates"]);
 
   const subject = COMMIT_SHA.test(target)
     ? commitSubject(repository, target)
@@ -347,9 +389,14 @@ main(async () => {
 
     watch.read();
 
-    if (approveGates && watch.approveGates() > 0) {
+    if (approving !== undefined && watch.approveGates(approving) > 0) {
       await sleep(intervalSeconds);
       continue;
+    }
+
+    // A failed required check needs a fix whether or not the rest registered.
+    if (watch.failed.length > 0) {
+      return watch.finish("failed");
     }
 
     if (!registered) {
@@ -366,11 +413,11 @@ main(async () => {
       return watch.finish("none");
     }
 
-    if (registered && watch.failed.length > 0) {
-      return watch.finish("failed");
-    }
-
-    if (registered && watch.pending.length === 0) {
+    if (
+      registered &&
+      watch.pending.length === 0 &&
+      watch.watchedRuns.length === 0
+    ) {
       return watch.finish(watch.gatedWatched.length > 0 ? "gated" : "passed");
     }
 
@@ -381,6 +428,33 @@ main(async () => {
     await sleep(intervalSeconds);
   }
 });
+
+/**
+ * The environments --approve-gates covers: undefined without the flag,
+ * null for every environment, or the names given.
+ */
+function approvedEnvironments(flag) {
+  if (flag === undefined) {
+    return undefined;
+  }
+
+  if (flag === true) {
+    return null;
+  }
+
+  const names = flag
+    .split(",")
+    .map((name) => name.trim())
+    .filter(Boolean);
+
+  if (names.length === 0) {
+    throw new ScriptError(
+      `The --approve-gates option needs environment names, got "${flag}".\n\n${USAGE}`,
+    );
+  }
+
+  return names;
+}
 
 function commitSubject(repository, sha) {
   return {
@@ -449,7 +523,8 @@ function readPullRequest(repository, number) {
  * workflows, by the path their runs report. Rulesets answer for any
  * branch, and include the ones an organization adds. Classic protection
  * answers 404 for a branch without it, and 403 without admin access,
- * so a refusal means nothing from it.
+ * so a refusal means nothing from it. Its `checks` carry the app each
+ * context is pinned to, and `contexts` repeat them without it.
  */
 function requirements(repository, branch) {
   const encoded = encodeURIComponent(branch);
@@ -462,6 +537,12 @@ function requirements(repository, branch) {
       `repos/${repository}/branches/${encoded}/protection/required_status_checks`,
     ]),
   );
+  const protectedContexts = protection?.checks
+    ? protection.checks.map(({ context, app_id }) => ({
+        name: context,
+        app_id: app_id ?? null,
+      }))
+    : (protection?.contexts ?? []).map((name) => ({ name, app_id: null }));
 
   const contexts = [
     ...rules
@@ -471,11 +552,7 @@ function requirements(repository, branch) {
         name: context,
         app_id: integration_id ?? null,
       })),
-    ...(protection?.contexts ?? []).map((name) => ({ name, app_id: null })),
-    ...(protection?.checks ?? []).map(({ context, app_id }) => ({
-      name: context,
-      app_id: app_id ?? null,
-    })),
+    ...protectedContexts,
   ];
   const workflows = rules
     .filter((rule) => rule.type === "workflows")
@@ -542,13 +619,14 @@ function commitStatuses(repository, sha) {
 
 /**
  * One entry per key: the one with the highest id, since a re-run or a
- * later workflow run adds a check run with a higher id. A check run and
- * a commit status with the same name stay apart, since the merge needs
- * both.
+ * later run of the same workflow adds a check run with a higher id.
+ * Jobs of one name in two workflows stay apart, as do a check run and a
+ * commit status of one name, since the merge needs each of them.
  */
 function latestOfEach(
   items,
-  keyOf = ({ source, app_id, name }) => `${source}:${app_id}:${name}`,
+  keyOf = ({ source, app_id, workflow_path, run_id, name }) =>
+    `${source}:${app_id}:${workflow_path ?? run_id}:${name}`,
 ) {
   const byKey = new Map();
 
@@ -564,10 +642,22 @@ function latestOfEach(
   return [...byKey.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/**
+ * A run's state and workflow. A run the repository cannot serve (one a
+ * workflow outside it started) reads as unknown, and its check runs
+ * speak for it.
+ */
 function readRun(repository, id) {
-  const run = gh(["api", `repos/${repository}/actions/runs/${id}`]);
+  const run = attempt(() =>
+    gh(["api", `repos/${repository}/actions/runs/${id}`]),
+  );
 
-  return { id, status: run.status, url: run.html_url, path: run.path };
+  return {
+    id,
+    status: run?.status ?? null,
+    url: run?.html_url ?? null,
+    path: run?.path ?? null,
+  };
 }
 
 function pendingDeployments(repository, runId) {

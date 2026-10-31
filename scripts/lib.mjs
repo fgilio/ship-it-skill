@@ -44,10 +44,11 @@ export function printJson(value) {
 
 /**
  * Parses `--flag value`, `--flag=value`, and boolean `--flag` arguments.
+ * An optional-value flag is true on its own and takes an inline value.
  */
 export function parseArguments(
   argv,
-  { usage, valueFlags = [], booleanFlags = [] },
+  { usage, valueFlags = [], booleanFlags = [], optionalValueFlags = [] },
 ) {
   const flags = {};
   const positionals = [];
@@ -69,6 +70,11 @@ export function parseArguments(
 
     if (booleanFlags.includes(name)) {
       flags[name] = true;
+      continue;
+    }
+
+    if (optionalValueFlags.includes(name)) {
+      flags[name] = inlineValue === undefined ? true : inlineValue;
       continue;
     }
 

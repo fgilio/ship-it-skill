@@ -5,8 +5,11 @@ import { createSandbox } from "./sandbox.mjs";
 const HEAD = "a".repeat(40);
 const OTHER_HEAD = "b".repeat(40);
 const RUN = 500;
+const OTHER_RUN = 600;
 const STAGING = { id: 42, name: "staging-review" };
+const PRODUCTION = { id: 9, name: "production" };
 const ACTIONS_APP_ID = 15368;
+const SECRET_SCAN = ".github/workflows/secret-scan.yml";
 
 // Minutes for --timeout and --register, seconds for --interval. The windows
 // are wide, since a poll takes several gh calls: a test that expects a
@@ -163,29 +166,94 @@ describe("ship-it-ci-watch.mjs on a pull request", () => {
     assert.deepEqual(output.missing, ["ci-success"]);
   });
 
+  test("reports a required check that failed before the others register", async () => {
+    writeState({
+      rules: [requireContexts("ci-success", "lint")],
+      checkRuns: [check("lint", { completesAtPoll: 1, conclusion: "failure" })],
+    });
+
+    const output = await watch();
+
+    assert.equal(output.result, "failed");
+    assert.deepEqual(
+      output.failed.map(({ name }) => name),
+      ["lint"],
+    );
+    assert.deepEqual(output.missing, ["ci-success"]);
+  });
+
   test("requires the jobs of a required workflow", async () => {
     writeState({
-      rules: [
-        requireContexts("ci-success"),
-        requireWorkflows(".github/workflows/secret-scan.yml"),
-      ],
-      runs: { 600: { path: ".github/workflows/secret-scan.yml" } },
+      rules: [requireContexts("ci-success"), requireWorkflows(SECRET_SCAN)],
+      runs: { [OTHER_RUN]: { path: SECRET_SCAN } },
       checkRuns: [
         check("ci-success", { completesAtPoll: 1 }),
         check("lint", { completesAtPoll: 1 }),
-        check("gitleaks", { run_id: 600, completesAtPoll: 3 }),
+        check("gitleaks", { run_id: OTHER_RUN, completesAtPoll: 3 }),
       ],
     });
 
     const output = await watch();
 
     assert.equal(output.result, "passed");
-    assert.deepEqual(output.required, [
-      "ci-success",
-      ".github/workflows/secret-scan.yml",
-    ]);
+    assert.deepEqual(output.required, ["ci-success", SECRET_SCAN]);
     assert.deepEqual(output.watched, ["ci-success", "gitleaks"]);
     assert.deepEqual(output.passed, ["ci-success", "gitleaks"]);
+  });
+
+  test("keeps a required workflow's run until its later jobs register and end", async () => {
+    writeState({
+      rules: [requireWorkflows(SECRET_SCAN)],
+      runs: { [OTHER_RUN]: { path: SECRET_SCAN } },
+      checkRuns: [
+        check("scan", { run_id: OTHER_RUN, completesAtPoll: 1 }),
+        check("report", {
+          run_id: OTHER_RUN,
+          appearsAtPoll: 3,
+          completesAtPoll: 4,
+        }),
+        check("lint", { completesAtPoll: 1 }),
+      ],
+    });
+
+    const output = await watch();
+
+    assert.equal(output.result, "passed");
+    assert.deepEqual(output.passed, ["report", "scan"]);
+  });
+
+  test("keeps same-named jobs of two workflows apart", async () => {
+    writeState({
+      rules: [requireWorkflows(".github/workflows/ci.yml", SECRET_SCAN)],
+      runs: { [OTHER_RUN]: { path: SECRET_SCAN } },
+      checkRuns: [
+        check("test", { completesAtPoll: 1 }),
+        check("test", { run_id: OTHER_RUN, completesAtPoll: 3 }),
+      ],
+    });
+
+    const output = await watch();
+
+    assert.equal(output.result, "passed");
+    assert.deepEqual(output.passed, ["test", "test"]);
+  });
+
+  test("goes on when a check's run cannot be read", async () => {
+    writeState({
+      runs: { [OTHER_RUN]: { missing: true } },
+      checkRuns: [
+        check("lint", { completesAtPoll: 1 }),
+        check("Critical alert SLA gate", {
+          run_id: OTHER_RUN,
+          completesAtPoll: 2,
+        }),
+      ],
+    });
+
+    const output = await watch();
+
+    assert.equal(output.result, "passed");
+    assert.deepEqual(output.passed, ["Critical alert SLA gate", "lint"]);
   });
 
   test("matches a required context to the app the rule names", async () => {
@@ -295,13 +363,13 @@ describe("ship-it-ci-watch.mjs on a pull request", () => {
         job_id: 1,
       },
     ]);
-    assert.deepEqual(output.pending, [
-      {
-        name: "test",
-        status: "in_progress",
-        url: `https://github.com/acme/shop/actions/runs/${RUN}/job/2`,
-      },
-    ]);
+    assert.deepEqual(
+      output.pending.map(({ name, status }) => ({ name, status })),
+      [
+        { name: "test", status: "in_progress" },
+        { name: ".github/workflows/ci.yml", status: "in_progress" },
+      ],
+    );
   });
 
   test("ends as gated when the merge requires the gate itself", async () => {
@@ -359,6 +427,34 @@ describe("ship-it-ci-watch.mjs on a pull request", () => {
     ]);
   });
 
+  test("approves only the environments --approve-gates names", async () => {
+    writeState({
+      checkRuns: [
+        check("lint", { completesAtPoll: 1 }),
+        gate("approve-preview"),
+        gate("approve-production", {
+          gate: { environment: PRODUCTION, can_approve: true, waitsAtPoll: 1 },
+        }),
+      ],
+    });
+
+    const output = await watch("7", ["--approve-gates=staging-review"]);
+
+    assert.equal(output.result, "passed");
+    assert.deepEqual(
+      output.gates.map(({ environment, approved }) => ({
+        environment,
+        approved,
+      })),
+      [
+        { environment: "staging-review", approved: true },
+        { environment: "production", approved: false },
+      ],
+    );
+    assert.equal(approvals().length, 1);
+    assert.ok(approvals()[0].includes("environment_ids[]=42"));
+  });
+
   test("approves a gate that holds a required job before giving up on it", async () => {
     writeState({
       rules: [requireContexts("deploy-preview")],
@@ -393,6 +489,21 @@ describe("ship-it-ci-watch.mjs on a pull request", () => {
     assert.deepEqual(approvals(), []);
   });
 
+  test("refuses --approve-gates with an empty list", async () => {
+    writeState();
+
+    const result = await sandbox.runScript("ship-it-ci-watch.mjs", [
+      "7",
+      "--approve-gates=,",
+    ]);
+
+    assert.equal(result.code, 1);
+    assert.match(
+      result.stderr,
+      /--approve-gates option needs environment names/,
+    );
+  });
+
   test("waits through an environment's timer, which ends on its own", async () => {
     writeState({
       checkRuns: [
@@ -424,7 +535,10 @@ describe("ship-it-ci-watch.mjs on a pull request", () => {
     assert.equal(output.result, "timeout");
     assert.deepEqual(
       output.pending.map(({ name, status }) => ({ name, status })),
-      [{ name: "lint", status: "in_progress" }],
+      [
+        { name: "lint", status: "in_progress" },
+        { name: ".github/workflows/ci.yml", status: "in_progress" },
+      ],
     );
   });
 
@@ -468,11 +582,15 @@ describe("ship-it-ci-watch.mjs on a pull request", () => {
     assert.match(output.reason, /merged/);
   });
 
-  test("reads the required contexts from classic protection too", async () => {
+  test("reads the required contexts from classic protection, each once", async () => {
     writeState({
-      protection: { contexts: ["ci"], checks: [{ context: "ci" }] },
+      protection: {
+        contexts: ["ci"],
+        checks: [{ context: "ci", app_id: ACTIONS_APP_ID }],
+      },
       checkRuns: [
         check("ci", { completesAtPoll: 1 }),
+        check("ci", { app_id: 999, completesAtPoll: 1, conclusion: "failure" }),
         check("lint", { completesAtPoll: 1, conclusion: "failure" }),
       ],
     });
@@ -578,10 +696,7 @@ describe("ship-it-ci-watch.mjs on a commit", () => {
       checkRuns: [
         check("test", { completesAtPoll: 1 }),
         gate("approve-production", {
-          gate: {
-            environment: { id: 9, name: "production" },
-            can_approve: true,
-          },
+          gate: { environment: PRODUCTION, can_approve: true },
         }),
         check("deploy-production", { heldByGate: true }),
       ],
@@ -616,10 +731,7 @@ describe("ship-it-ci-watch.mjs on a commit", () => {
       checkRuns: [
         check("test", { completesAtPoll: 1 }),
         gate("approve-production", {
-          gate: {
-            environment: { id: 9, name: "production" },
-            can_approve: true,
-          },
+          gate: { environment: PRODUCTION, can_approve: true },
         }),
         check("deploy-production", { heldByGate: true }),
       ],
@@ -635,6 +747,20 @@ describe("ship-it-ci-watch.mjs on a commit", () => {
     ]);
     assert.equal(output.gates[0].approved, true);
     assert.match(approvals()[0].at(-1), new RegExp(`for ${HEAD}$`));
+  });
+
+  test("waits for a run's later jobs to register before it passes", async () => {
+    writeState({
+      checkRuns: [
+        check("build", { completesAtPoll: 1 }),
+        check("deploy", { appearsAtPoll: 3, completesAtPoll: 4 }),
+      ],
+    });
+
+    const output = await watch(HEAD);
+
+    assert.equal(output.result, "passed");
+    assert.deepEqual(output.passed, ["build", "deploy"]);
   });
 
   test("reports none when no check registers", async () => {
