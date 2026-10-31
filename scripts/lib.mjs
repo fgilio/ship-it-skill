@@ -22,14 +22,14 @@ const GH_TIMEOUT_SECONDS = Number(
   process.env.SHIP_IT_GH_TIMEOUT_SECONDS ?? 120,
 );
 
-export class ReviewError extends Error {}
+export class ScriptError extends Error {}
 
 export async function main(run) {
   try {
     await run();
   } catch (error) {
     const message =
-      error instanceof ReviewError
+      error instanceof ScriptError
         ? error.message
         : `Unexpected failure: ${error?.stack ?? error}`;
 
@@ -73,13 +73,13 @@ export function parseArguments(
     }
 
     if (!valueFlags.includes(name)) {
-      throw new ReviewError(`Unknown option --${name}.\n\n${usage}`);
+      throw new ScriptError(`Unknown option --${name}.\n\n${usage}`);
     }
 
     const value = inlineValue ?? argv[++index];
 
     if (value === undefined || value === "") {
-      throw new ReviewError(`The --${name} option needs a value.\n\n${usage}`);
+      throw new ScriptError(`The --${name} option needs a value.\n\n${usage}`);
     }
 
     flags[name] = value;
@@ -100,7 +100,7 @@ export function positiveNumber(value, name, usage) {
   const number = Number(value);
 
   if (!Number.isFinite(number) || number <= 0) {
-    throw new ReviewError(
+    throw new ScriptError(
       `The --${name} option needs a positive number, got "${value}".\n\n${usage}`,
     );
   }
@@ -120,13 +120,13 @@ export function gh(args, { json = true } = {}) {
   });
 
   if (result.error?.code === "ENOENT") {
-    throw new ReviewError(
+    throw new ScriptError(
       "Unable to find the gh executable on PATH. Install the GitHub CLI and run `gh auth login`, then try again. A session with the GitHub MCP server runs the same protocol through skills/review/without-gh.md.",
     );
   }
 
   if (result.error?.code === "ETIMEDOUT") {
-    throw new ReviewError(
+    throw new ScriptError(
       `gh ${args.join(" ")} did not answer within ${GH_TIMEOUT_SECONDS} seconds. Run the script again: a review that posted meanwhile is reported without a new request.`,
     );
   }
@@ -134,7 +134,7 @@ export function gh(args, { json = true } = {}) {
   if (result.status !== 0) {
     const detail = (result.stderr || result.stdout).trim();
 
-    throw new ReviewError(`gh ${args.join(" ")} failed: ${detail}`);
+    throw new ScriptError(`gh ${args.join(" ")} failed: ${detail}`);
   }
 
   if (!json) {
@@ -144,7 +144,7 @@ export function gh(args, { json = true } = {}) {
   try {
     return JSON.parse(result.stdout);
   } catch {
-    throw new ReviewError(
+    throw new ScriptError(
       `gh ${args.join(" ")} returned output that is not JSON: ${result.stdout.slice(0, 200)}`,
     );
   }
@@ -167,7 +167,7 @@ export function resolveRepository(repositoryFlag, pullRequestArgument) {
     repositoryFlag ?? fromUrl ?? gh(["api", "repos/{owner}/{repo}"]).full_name;
 
   if (!REPOSITORY.test(repository)) {
-    throw new ReviewError(
+    throw new ScriptError(
       `The repository must look like owner/name, got "${repository}".`,
     );
   }
@@ -179,7 +179,7 @@ export function parsePullRequestNumber(argument) {
   const number = Number(argument?.match(PULL_REQUEST_URL)?.[2] ?? argument);
 
   if (!Number.isInteger(number) || number <= 0) {
-    throw new ReviewError(
+    throw new ScriptError(
       `The pull request must be a number or a github.com pull request URL, got "${argument}".`,
     );
   }
