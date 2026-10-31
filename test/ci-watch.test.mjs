@@ -324,6 +324,42 @@ describe("ship-it-ci-watch.mjs on a pull request", () => {
     );
   });
 
+  test("does not wait for a review service's own run", async () => {
+    writeState({
+      runs: { 700: { path: ".github/workflows/review.yml" } },
+      checkRuns: [
+        check("lint", { completesAtPoll: 1 }),
+        check("reviewbot-review:code-review", {
+          run_id: 700,
+          completesAtPoll: 9999,
+        }),
+      ],
+    });
+
+    const output = await watch();
+
+    assert.equal(output.result, "passed");
+    assert.deepEqual(output.watched, ["lint"]);
+    assert.deepEqual(output.pending, []);
+  });
+
+  test("holds for a gate when the classic protection cannot be read", async () => {
+    writeState({
+      protection: { forbidden: true },
+      checkRuns: [
+        check("lint", { completesAtPoll: 1 }),
+        gate("approve-preview"),
+      ],
+    });
+
+    const output = await watch();
+
+    assert.equal(output.result, "gated");
+    assert.equal(output.requirements_known, false);
+    assert.deepEqual(output.required, []);
+    assert.equal(output.gates[0].can_approve, true);
+  });
+
   test("does not let a review service's check alone count as registered", async () => {
     writeState({
       checkRuns: [
@@ -843,6 +879,22 @@ describe("ship-it-ci-watch.mjs on a commit", () => {
 
     assert.equal(output.result, "gated");
     assert.match(output.gates[0].approval_error, /refused the approval/);
+  });
+
+  test("does not count a failed run a newer run of the workflow replaced", async () => {
+    writeState({
+      runs: { 800: { path: ".github/workflows/ci.yml" } },
+      checkRuns: [
+        check("test", { status: "completed", conclusion: "failure" }),
+        check("test", { run_id: 800, completesAtPoll: 1 }),
+      ],
+    });
+
+    const output = await watch(HEAD);
+
+    assert.equal(output.result, "passed");
+    assert.deepEqual(output.passed, ["test"]);
+    assert.deepEqual(output.failed, []);
   });
 
   test("reports a run that failed before any job ran", async () => {
