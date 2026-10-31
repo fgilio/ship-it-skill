@@ -121,7 +121,7 @@ export function gh(args, { json = true } = {}) {
 
   if (result.error?.code === "ENOENT") {
     throw new ScriptError(
-      "Unable to find the gh executable on PATH. Install the GitHub CLI and run `gh auth login`, then try again. A session with the GitHub MCP server runs the same protocol through skills/review/without-gh.md.",
+      "Unable to find the gh executable on PATH. Install the GitHub CLI and run `gh auth login`, then try again. A session with the GitHub MCP server does the same work by hand, as references/github.md says.",
     );
   }
 
