@@ -841,6 +841,23 @@ describe("ship-it-ci-watch.ts on a pull request", () => {
     );
   });
 
+  test("counts a required review service's check as the head's first check", async () => {
+    writeState({
+      rules: [requireContexts("reviewbot-review:code-review")],
+      checkRuns: [
+        check("reviewbot-review:code-review", {
+          run_id: null,
+          completesAtPoll: 1,
+        }),
+      ],
+    });
+
+    const output = await watch("7", ["--first-check", SHORT]);
+
+    expect(output.result).toBe("passed");
+    expect(output.passed).toEqual(["reviewbot-review:code-review"]);
+  });
+
   test("fails when the required check's head shows nothing within --first-check", async () => {
     writeState({ rules: [requireContexts("ci-success")] });
 

@@ -248,12 +248,13 @@ class Watch {
   }
 
   /**
-   * Whether the head shows anything at all: a check or status that is
-   * not a review service's, or a workflow run.
+   * Whether the head shows anything at all: a workflow run, or a check
+   * or status that is not a review service's unless the merge requires it.
    */
   get anythingAppeared(): boolean {
     return (
-      this.runs.size > 0 || this.checks.some((check) => !isReviewCheck(check))
+      this.runs.size > 0 ||
+      this.checks.some((check) => !isReviewCheck(check) || this.requires(check))
     );
   }
 
