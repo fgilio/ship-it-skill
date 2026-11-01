@@ -1,0 +1,43 @@
+# Evals
+
+`claude plugin eval` runs the suite in this directory: each case starts a real Claude Code session with this plugin loaded, sends its prompt, and grades what the session did. `<verb>/PLAN.md` lists the cases planned for each skill. The cases built so far cover `land`, under `land/`.
+
+## Run the suite
+
+From the repository root:
+
+```bash
+PATH=".fake-bin:$PATH" claude plugin eval . \
+  --scaffold --trust-plugin --ablation none \
+  --allow-tools Bash Write Edit
+```
+
+- `PATH=".fake-bin:$PATH"` puts each run's fake `gh` ahead of the real one. The entry is relative, so it resolves inside each run's workspace, where the scaffold puts the fake. Without it the scaffold stops the run.
+- `--scaffold` builds each run's workspace with `land/fixtures/setup.sh`. Scaffold scripts run as you, outside the sandbox, so pass it only for a suite you trust.
+- `--ablation none` skips the run without the plugin, which can only fail here: the prompts call `/ship-it:land` by name.
+- `--allow-tools Bash Write Edit` lets the session work in its workspace. Bash runs inside Claude Code's sandbox, with no network.
+
+Add `--case <name>` for one case and `--runs 1` for one run. Each case runs three times by default. Results go to `evals/results/<timestamp>/` (ignored by git): `aggregate-result.json` and `report.html`. `--keep-temp` keeps each run's workspace and its transcript (`out/trace.jsonl`) for debugging.
+
+Every run is a model session on your login, so it counts against your plan. A full run of the three cases took about 22 minutes and cost about $8 at list price (see the PR that added the suite for the measured run).
+
+## The land cases
+
+Each case starts in the same workspace: the Acme Books invoices command line tool (`land/fixtures/repo/`) on `main`, with two commits pushed to a local copy of its GitHub remote, and a fake `gh` (`land/fixtures/fake-gh.ts`). The fake answers the calls the skills and their scripts make, for one repository whose pull requests the session opens. CI has one required check, `test`, that passes on every commit. The repository offers no review labels. Every call lands in `.fake-bin/gh-calls.jsonl`, one JSON line each, with the `event` the graders read (`pr.create`, `pr.ready`, `pr.merge`, ...).
+
+| Case | Prompt | Guards |
+| --- | --- | --- |
+| `gate-stops-without-plan` | `/ship-it:land add PDF downloads to the invoices` | The gate: a one-line request stops land. No new branch or git object in the workspace, no pull request in the `gh` log, no Edit or Write call, and the reply names what the plan statement lacks. |
+| `run-file-evidence-chain` | `merge-ready` with a two-PR plan where the PDF PR needs the logging PR's evidence | The run file and the chain: one tool call writes `~/.claude/ship-it/runs/acme-books/invoices/<slug>.json` with `mode` `merge-ready` and `depends_on` carrying `needs: evidence`. One branch and one pull request, a draft that names no PDF, marked ready, never merged, and a reply that hands it over and says the PDF PR waits. |
+| `merge-ready-never-merges` | `merge-ready` with a one-PR plan | The merge mode: one pull request, marked ready, no merge call in the `gh` log, no merge attempt in any shell command (including a push to `main`), and the PR URL in the reply. |
+
+Every grader but two reads an exact observable: the files the session created, a file's contents, or the transcript's tool calls. The two `llm` graders read the final reply against a PASS and FAIL rubric.
+
+## What the sandbox allows
+
+Each run gets a temporary home, an empty workspace, and only this plugin. These limits shape the fixtures:
+
+- **Network**: none for shell commands, so GitHub is the fake `gh` and `origin` is a bare repository under `.git/fake-remote/`, which `url.<path>.insteadOf` maps from `https://github.com/acme-books/invoices.git`.
+- **Writes**: the workspace and the temporary home, except `~/.claude`, which no tool can write, whatever `--allow-tools` grants. The `run-file-evidence-chain` case grades the run file from the tool call that writes it, since the file never lands. Writes to `.git/config` are refused too, so the scaffold sets every git setting, and `git push -u` pushes but cannot record the upstream.
+- **git**: the macOS `/usr/bin/git` shim needs a cache directory the sandbox refuses, so `.fake-bin/git` runs the git binary the scaffold found. The remote carries its own `.fake-bin` for the same reason.
+- **Graders**: no custom code. `files` lists the paths the session created, `.git` internals included, so a new branch shows as `.git/refs/heads/<name>`. A file target reads one exact path, with no glob. A slash command in the prompt loads the skill without a Skill tool call, so no grader can check that the skill fired.

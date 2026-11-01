@@ -1,4 +1,6 @@
-# Eval plan (not built)
+# Eval plan
+
+Three of these cases run as the suite beside this file, as `../README.md` says: the gate, the run file of a chain that needs evidence, and `merge-ready`. The rest are not built.
 
 Fixture: a small app repository with tests and a dev server the session can start, a stubbed `gh` with tagged review labels and scripted outcomes, and a conversation that settled a plan: customers download each invoice as a PDF, with a preparation refactor of the invoice totals.
 

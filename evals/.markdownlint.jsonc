@@ -1,0 +1,9 @@
+{
+  // This file replaces the root configuration's rules under evals/, so the
+  // first two lines repeat them.
+  "default": true,
+  "MD013": false,
+  // An eval prompt is the message the session receives, and a grader's body
+  // is its rubric. Both follow front matter, not a heading.
+  "MD041": false,
+}
