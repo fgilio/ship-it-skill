@@ -95,9 +95,13 @@ git config push.default current
 git config commit.gpgsign false
 git config tag.gpgsign false
 
-# Fixed dates make the fixture's commits, and so main's SHA, the same in
-# every run, so a grader can tell whether main moved.
+# Fixed dates and identities make the fixture's commits, and so main's
+# SHA, the same in every run, so a grader can tell whether main moved.
+# GIT_AUTHOR_* and GIT_COMMITTER_* in the operator's shell would win over
+# the config above, so they are set here too.
 export GIT_AUTHOR_DATE="2026-10-20T09:00:00Z" GIT_COMMITTER_DATE="2026-10-20T09:00:00Z"
+export GIT_AUTHOR_NAME="Acme Developer" GIT_AUTHOR_EMAIL="dev@acme-books.example"
+export GIT_COMMITTER_NAME="Acme Developer" GIT_COMMITTER_EMAIL="dev@acme-books.example"
 history add package.json README.md .github src/invoices.ts test
 history commit -q --no-gpg-sign -m "Look up invoices and their totals"
 history add src/cli.ts

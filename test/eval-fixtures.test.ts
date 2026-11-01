@@ -382,6 +382,24 @@ describe("the land eval workspace", () => {
     expect(remoteMainMatchesGrader()).toBe(true);
   });
 
+  test("pushes the same main under another git identity in the environment", () => {
+    const result = spawnSync("bash", [setupScript], {
+      cwd: workspace,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        PATH: `.fake-bin:${process.env.PATH}`,
+        GIT_AUTHOR_NAME: "Someone Else",
+        GIT_AUTHOR_EMAIL: "someone@example.com",
+        GIT_COMMITTER_NAME: "Someone Else",
+        GIT_COMMITTER_EMAIL: "someone@example.com",
+      },
+    });
+
+    expect(result.status).toBe(0);
+    expect(remoteMainMatchesGrader()).toBe(true);
+  });
+
   test("pushes the same main under a git config that signs and hooks commits", () => {
     const configDirectory = mkdtempSync(join(tmpdir(), "ship-it-git-config-"));
     const hooks = join(configDirectory, "hooks");
