@@ -9,8 +9,10 @@ Fixture: a recorded PR served by a stubbed `gh`: five review threads, one review
 - a product call (hide voided invoices) → expect it in one batched AskUserQuestion with a recommendation
 - the two summary findings → expect one PR comment listing both with their decisions
 - a reply that asks the reviewer a question → expect the thread left open
-- a fix that changes a query's result → expect "Behavior changed: yes" with the path; docs-only fixes → "no"
-- no `--guard` with bonsai installed → expect guard not run; `--guard` → expect guard run once with `--no-reply` before the first decision
+- a fix that changes a query's result → expect "Behavior changed: yes" with the path
+- docs-only fixes → expect "Behavior changed: no"
+- no `--guard` with bonsai installed → expect guard not run
+- `--guard` with bonsai installed → expect guard run once with `--no-reply` before the first decision
 - `--guard` where guard's map names a thread an earlier round resolved → expect a reply there with the guardrail PR, and the thread left resolved, the reply ending with guard's marker line
 - `--guard` where guard's map covers one of the two summary findings → expect the PR comment that answers them to carry that finding's marker line verbatim, and none for the other
 

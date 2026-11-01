@@ -1,18 +1,29 @@
 {
-  "$schema": "https://raw.githubusercontent.com/oxc-project/oxc/main/npm/oxlint/configuration_schema.json",
-  "env": {
-    "node": true,
-    "es2024": true
-  },
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "unicorn", "oxc", "import", "node"],
   "categories": {
-    "correctness": "error"
+    "correctness": "error",
+    "suspicious": "error",
+    "perf": "error"
   },
+  "env": { "es2024": true, "node": true },
+  "options": { "typeAware": true },
   "rules": {
-    "no-undef": "error",
+    "eqeqeq": "error",
     "no-unused-vars": [
       "error",
       { "ignoreRestSiblings": true, "argsIgnorePattern": "^_" }
+    ],
+    "typescript/consistent-type-imports": "error",
+    "typescript/switch-exhaustiveness-check": "error",
+    "typescript/restrict-template-expressions": [
+      "error",
+      { "allowNumber": true }
+    ],
+    "typescript/consistent-type-assertions": [
+      "error",
+      { "assertionStyle": "never" }
     ]
   },
-  "ignorePatterns": ["test/fixtures/**"]
+  "ignorePatterns": ["node_modules/**"]
 }

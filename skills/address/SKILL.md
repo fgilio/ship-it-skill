@@ -80,17 +80,22 @@ Replies cite commits, so code lands first:
 3. Commit and push, following `${CLAUDE_SKILL_DIR}/../../references/commit-push.md`: one commit per root cause, and one commit for a review's numbered checklist when none of its fixes changes behavior.
 4. Reply to every finding, citing the fix commit's SHA, and the guardrail PR that covers it when there is one. Write in the user's voice: load the `fgilio-voice` skill when the session has it.
    - A thread (`in_reply_to` takes the first comment's `databaseId`):
+
      ```bash
      gh api 'repos/{owner}/{repo}/pulls/<number>/comments' -F in_reply_to=<databaseId> -f body='...'
      ```
+
    - Findings without a thread: one PR comment that lists each finding with its decision (fixed in `<sha>`, answered with the reason, or the user's call), naming each numbered item by its review and its number (`<review URL> M2: fixed in <sha>`): `gh api 'repos/{owner}/{repo}/issues/<number>/comments' -F body=@<file>`.
 5. Resolve each thread whose fix is pushed, or whose reply settles it:
+
    ```bash
    gh api graphql \
      -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' \
      -f id=<threadId>
    ```
+
    Leave a thread open when the reply asks the reviewer something or waits for their review again, and while its finding waits for the user. Resolving those buries the conversation.
+
 6. When commits were pushed, follow `${CLAUDE_SKILL_DIR}/../../references/ci-watch.md`. Inside review rounds the watch runs in the background and the next round goes on without it, as the review skill's step 3 says. A manual gate the watch lists follows that reference's "Manual gates".
 7. Ask the saved escalations, all in one AskUserQuestion, one question per finding, each with a recommendation. Act on each answer as Fix or Answer, through steps 1 to 6.
 

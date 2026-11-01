@@ -1,11 +1,8 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // Stands in for the GitHub CLI: answers the calls the scripts make from a
 // state file, and plays each scripted outcome at its poll.
 //
-// State (FAKE_GH_STATE, rewritten on every call):
-//   repo, labels, pr { number, state, headRefOid, base, labels }, reviews,
-//   comments, checkRuns, statuses, rules, protection (or { forbidden }), runs,
-//   outcomes { <label>: [<outcome per request>] }
+// State (FAKE_GH_STATE, rewritten on every call): FakeState below.
 //
 // Review outcomes: an outcome shows up `afterPolls` review listings after its
 // request, and holds one of: review {}, refusal "<reason>", check
@@ -26,60 +23,218 @@
 // `path`, `missing` for a run the repository cannot serve, `appearsAtPoll`
 // for one created late, `conclusion` for one that ended with no job,
 // `staleFailure` for one that shows its old failure while its jobs run again,
-// and `refusesApproval` for one whose environment refuses the approval. A run is in progress while any of its checks has not
-// registered. The pull request's head moves at `headMovesAtPoll` and the pull
-// request closes at `closesAtPoll`.
+// and `refusesApproval` for one whose environment refuses the approval. A run
+// is in progress while any of its checks has not registered. The pull
+// request's head moves at `headMovesAtPoll` and the pull request closes at
+// `closesAtPoll`.
 //
 // FAKE_GH_STALL_ON stalls any call whose arguments contain it.
 
 import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 
-const args = process.argv.slice(2);
-const statePath = process.env.FAKE_GH_STATE;
-const state = JSON.parse(readFileSync(statePath, "utf8"));
+interface Environment {
+  id: number;
+  name: string;
+}
 
-state.polls ??= 0;
-state.watchPolls ??= 0;
-state.requests ??= {};
-state.played ??= [];
-state.approvals ??= [];
+interface FakeGate {
+  environment: Environment;
+  can_approve?: boolean;
+  reviewers?: unknown[];
+  wait_timer?: number;
+  waitsAtPoll?: number;
+  endsAtPoll?: number;
+}
 
-if (process.env.FAKE_GH_LOG) {
-  appendFileSync(process.env.FAKE_GH_LOG, `${JSON.stringify(args)}\n`);
+export interface FakeCheck {
+  id: number;
+  name: string;
+  head_sha: string;
+  run_id?: number | null;
+  app_id?: number;
+  status?: string;
+  conclusion?: string;
+  started_at?: string;
+  output?: { title: string | null };
+  details_url?: string;
+  appearsAtPoll?: number;
+  queuedUntil?: number;
+  completesAtPoll?: number;
+  gate?: FakeGate;
+  heldByGate?: boolean;
+}
+
+interface FakeRun {
+  path?: string;
+  missing?: boolean;
+  appearsAtPoll?: number;
+  conclusion?: string;
+  staleFailure?: boolean;
+  refusesApproval?: boolean;
+}
+
+interface FakePullRequest {
+  number: number;
+  state: "OPEN" | "CLOSED" | "MERGED";
+  headRefOid: string;
+  base?: string;
+  labels: { name: string }[];
+  headMovesAtPoll?: number;
+  headMovesTo?: string;
+  closesAtPoll?: number;
+  closesAs?: "CLOSED" | "MERGED";
+}
+
+interface FakeOutcome {
+  afterPolls?: number;
+  review?: { body?: string };
+  refusal?: string;
+  check?: { conclusion: string; title: string };
+  headMovesTo?: string;
+  state?: FakePullRequest["state"];
+}
+
+interface FakeLabel {
+  name: string;
+  description: string;
+}
+
+interface FakeReview {
+  id: number;
+  body: string;
+  html_url?: string;
+  submitted_at: string;
+  state?: string;
+}
+
+interface FakeComment {
+  id: number;
+  body: string;
+  html_url?: string;
+  created_at: string;
+}
+
+interface FakeStatus {
+  id: number;
+  context: string;
+  state: string;
+  target_url?: string;
+  sha?: string;
+}
+
+export interface FakeRule {
+  type: string;
+  parameters: Record<string, unknown>;
+}
+
+export interface FakeState {
+  repo: string;
+  labels: FakeLabel[];
+  labelPages?: FakeLabel[][];
+  pr: FakePullRequest;
+  reviews: FakeReview[];
+  comments: FakeComment[];
+  checkRuns: FakeCheck[];
+  statuses?: FakeStatus[];
+  rules?: FakeRule[];
+  protection?:
+    | { forbidden: true }
+    | { contexts?: string[]; checks?: { context: string; app_id: number }[] };
+  runs?: Record<number, FakeRun>;
+  outcomes?: Record<string, FakeOutcome[]>;
+  polls?: number;
+  watchPolls?: number;
+  requests?: Record<string, { count: number; atPoll: number }>;
+  played?: string[];
+  approvals?: { run_id: number; environment_id: number; atPoll: number }[];
+}
+
+/**
+ * The state file is written by the tests through FakeState, so the
+ * shape is checked at its top level only.
+ */
+function isFakeState(value: unknown): value is FakeState {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "repo" in value &&
+    typeof value.repo === "string" &&
+    "pr" in value &&
+    typeof value.pr === "object" &&
+    "checkRuns" in value &&
+    Array.isArray(value.checkRuns)
+  );
+}
+
+interface ServedCheck {
+  id: number;
+  name: string;
+  head_sha: string;
+  status: string;
+  conclusion: string | null;
+  started_at: string;
+  output: { title: string | null };
+  app: { id: number; slug: string };
+  html_url: string | null;
+  details_url: string;
 }
 
 const ACTIONS_APP_ID = 15368;
 const DEFAULT_REVIEWERS = [{ type: "Team", reviewer: { name: "Core Team" } }];
 
+const args = process.argv.slice(2);
+const statePath = process.env.FAKE_GH_STATE ?? "";
+const parsedState: unknown = JSON.parse(readFileSync(statePath, "utf8"));
+
+if (!isFakeState(parsedState)) {
+  throw new Error(`The fake gh state in ${statePath} is not a FakeState.`);
+}
+
+const state = parsedState;
+const requests = (state.requests ??= {});
+const played = (state.played ??= []);
+const approvals = (state.approvals ??= []);
+
+state.polls ??= 0;
+state.watchPolls ??= 0;
+
+if (process.env.FAKE_GH_LOG) {
+  appendFileSync(process.env.FAKE_GH_LOG, `${JSON.stringify(args)}\n`);
+}
+
+const polls = () => state.polls ?? 0;
+const watchPolls = () => state.watchPolls ?? 0;
 const now = () => new Date().toISOString();
-const respond = (value) => process.stdout.write(`${JSON.stringify(value)}\n`);
-const refuse = (message) => {
+const respond = (value: unknown) => {
+  process.stdout.write(`${JSON.stringify(value)}\n`);
+};
+const refuse = (message: string) => {
   process.stderr.write(`${message}\n`);
   process.exitCode = 1;
 };
-const option = (name) => args[args.indexOf(name) + 1];
-const values = (name) =>
+const option = (name: string) => args[args.indexOf(name) + 1];
+const values = (name: string) =>
   args.flatMap((argument, index) =>
-    argument === name ? [args[index + 1]] : [],
+    argument === name ? [args[index + 1] ?? ""] : [],
   );
 const paginated = () => args.includes("--paginate");
 
-function play() {
-  for (const [label, request] of Object.entries(state.requests)) {
+function play(): void {
+  for (const [label, request] of Object.entries(requests)) {
     const outcome = state.outcomes?.[label]?.[request.count - 1];
     const key = `${label}#${request.count}`;
 
     if (
       !outcome ||
-      state.played.includes(key) ||
-      state.polls - request.atPoll < (outcome.afterPolls ?? 1)
+      played.includes(key) ||
+      polls() - request.atPoll < (outcome.afterPolls ?? 1)
     ) {
       continue;
     }
 
-    state.played.push(key);
+    played.push(key);
 
-    const [service, rest] = label.split("-review:");
+    const [service, rest = ""] = label.split("-review:");
     const kind = rest.split(":")[0];
 
     if (outcome.review) {
@@ -118,9 +273,9 @@ function play() {
   }
 }
 
-function answerIssueLabels(method, path) {
+function answerIssueLabels(method: string, path: string): void {
   if (method === "DELETE") {
-    const label = decodeURIComponent(path.split("/labels/")[1]);
+    const label = decodeURIComponent(path.split("/labels/")[1] ?? "");
 
     state.pr.labels = state.pr.labels.filter(({ name }) => name !== label);
 
@@ -132,9 +287,9 @@ function answerIssueLabels(method, path) {
       const label = field.slice("labels[]=".length);
 
       state.pr.labels.push({ name: label });
-      state.requests[label] = {
-        count: (state.requests[label]?.count ?? 0) + 1,
-        atPoll: state.polls,
+      requests[label] = {
+        count: (requests[label]?.count ?? 0) + 1,
+        atPoll: polls(),
       };
     }
 
@@ -144,7 +299,7 @@ function answerIssueLabels(method, path) {
   return respond([state.pr.labels]);
 }
 
-function completeCheck(label, conclusion, title) {
+function completeCheck(label: string, conclusion: string, title: string): void {
   state.checkRuns.push({
     id: 3000 + state.checkRuns.length,
     name: label,
@@ -160,9 +315,12 @@ function completeCheck(label, conclusion, title) {
  * The check run as the API would serve it at this poll, or null while
  * it has not registered.
  */
-function visibleCheck(check) {
-  const poll = state.watchPolls;
-  const served = (status, conclusion = null) => ({
+function visibleCheck(check: FakeCheck): ServedCheck | null {
+  const poll = watchPolls();
+  const served = (
+    status: string,
+    conclusion: string | null = null,
+  ): ServedCheck => ({
     id: check.id,
     name: check.name,
     head_sha: check.head_sha,
@@ -190,10 +348,11 @@ function visibleCheck(check) {
   }
 
   if (check.gate) {
-    const approval = state.approvals.find(
-      (approval) =>
-        approval.run_id === check.run_id &&
-        approval.environment_id === check.gate.environment.id,
+    const { gate } = check;
+    const approval = approvals.find(
+      (candidate) =>
+        candidate.run_id === check.run_id &&
+        candidate.environment_id === gate.environment.id,
     );
 
     if (approval) {
@@ -202,20 +361,20 @@ function visibleCheck(check) {
         : served("in_progress");
     }
 
-    if (poll < (check.gate.waitsAtPoll ?? 1)) {
+    if (poll < (gate.waitsAtPoll ?? 1)) {
       return served("queued");
     }
 
-    const timerOnly = check.gate.reviewers?.length === 0;
+    const timerOnly = gate.reviewers?.length === 0;
 
-    return timerOnly && poll >= (check.gate.endsAtPoll ?? 2)
+    return timerOnly && poll >= (gate.endsAtPoll ?? 2)
       ? served("completed", "success")
       : served("waiting");
   }
 
   if (check.heldByGate) {
-    const approval = state.approvals.find(
-      (approval) => approval.run_id === check.run_id,
+    const approval = approvals.find(
+      (candidate) => candidate.run_id === check.run_id,
     );
 
     if (!approval) {
@@ -236,28 +395,30 @@ function visibleCheck(check) {
     : served("in_progress");
 }
 
-function visibleChecks(sha) {
+function visibleChecks(sha: string): ServedCheck[] {
   return state.checkRuns
     .map(visibleCheck)
-    .filter((check) => check && check.head_sha === sha);
+    .filter(
+      (check): check is ServedCheck => check !== null && check.head_sha === sha,
+    );
 }
 
-function runIds() {
+function runIds(): number[] {
   return [
     ...new Set([
-      ...state.checkRuns.map(({ run_id }) => run_id).filter(Boolean),
+      ...state.checkRuns.flatMap(({ run_id }) => (run_id ? [run_id] : [])),
       ...Object.keys(state.runs ?? {}).map(Number),
     ]),
   ];
 }
 
-function runExists(runId) {
+function runExists(runId: number): boolean {
   const run = state.runs?.[runId];
 
-  return !run?.missing && state.watchPolls >= (run?.appearsAtPoll ?? 0);
+  return !run?.missing && watchPolls() >= (run?.appearsAtPoll ?? 0);
 }
 
-function runStatus(runId) {
+function runStatus(runId: number): string {
   const checks = state.checkRuns
     .filter((check) => check.run_id === runId)
     .map(visibleCheck);
@@ -271,12 +432,17 @@ function runStatus(runId) {
     : "in_progress";
 }
 
-function runDetails(runId) {
+function runDetails(runId: number) {
   const status = runStatus(runId);
+  const run = state.runs?.[runId];
+  const path = run?.path ?? ".github/workflows/ci.yml";
+  const htmlUrl = `https://github.com/${state.repo}/actions/runs/${runId}`;
   // The run's conclusion follows its latest attempt of each job.
-  const latest = new Map();
+  const latest = new Map<string, ServedCheck>();
 
-  for (const check of state.checkRuns.filter((run) => run.run_id === runId)) {
+  for (const check of state.checkRuns.filter(
+    (candidate) => candidate.run_id === runId,
+  )) {
     const visible = visibleCheck(check);
 
     if (visible && (latest.get(check.name)?.id ?? 0) < visible.id) {
@@ -285,18 +451,19 @@ function runDetails(runId) {
   }
 
   const failed = [...latest.values()].some(
-    (check) => !["success", "neutral", "skipped"].includes(check.conclusion),
+    (check) =>
+      !["success", "neutral", "skipped"].includes(check.conclusion ?? ""),
   );
 
   // A run rerun between two reads still shows its old failure while its
   // jobs run again.
-  if (state.runs?.[runId]?.staleFailure && status !== "completed") {
+  if (run?.staleFailure && status !== "completed") {
     return {
       id: runId,
       status: "completed",
       conclusion: "failure",
-      html_url: `https://github.com/${state.repo}/actions/runs/${runId}`,
-      path: state.runs?.[runId]?.path ?? ".github/workflows/ci.yml",
+      html_url: htmlUrl,
+      path,
     };
   }
 
@@ -305,15 +472,15 @@ function runDetails(runId) {
     status,
     conclusion:
       status === "completed"
-        ? (state.runs?.[runId]?.conclusion ?? (failed ? "failure" : "success"))
+        ? (run?.conclusion ?? (failed ? "failure" : "success"))
         : null,
-    html_url: `https://github.com/${state.repo}/actions/runs/${runId}`,
-    path: state.runs?.[runId]?.path ?? ".github/workflows/ci.yml",
+    html_url: htmlUrl,
+    path,
   };
 }
 
-function pendingDeployments(runId) {
-  const environments = new Map();
+function pendingDeployments(runId: number) {
+  const environments = new Map<number, unknown>();
 
   for (const check of state.checkRuns) {
     if (
@@ -336,8 +503,8 @@ function pendingDeployments(runId) {
   return [...environments.values()];
 }
 
-function answerPullRequest() {
-  const poll = state.watchPolls;
+function answerPullRequest(): void {
+  const poll = watchPolls();
   const head =
     state.pr.headMovesAtPoll !== undefined && poll >= state.pr.headMovesAtPoll
       ? state.pr.headMovesTo
@@ -355,14 +522,14 @@ function answerPullRequest() {
   });
 }
 
-function answerActionsRuns(method, path) {
+function answerActionsRuns(method: string, path: string): void {
   if (path.includes("/actions/runs?")) {
-    const sha = path.split("head_sha=")[1].split("&")[0];
+    const sha = path.split("head_sha=")[1]?.split("&")[0];
     const runs = runIds()
       .filter(
         (runId) =>
           runExists(runId) &&
-          (state.runs?.[runId] ||
+          (state.runs?.[runId] !== undefined ||
             state.checkRuns.some(
               (check) => check.run_id === runId && check.head_sha === sha,
             )),
@@ -372,7 +539,7 @@ function answerActionsRuns(method, path) {
     return respond([{ total_count: runs.length, workflow_runs: runs }]);
   }
 
-  const runId = Number(path.split("/actions/runs/")[1].split("/")[0]);
+  const runId = Number(path.split("/actions/runs/")[1]?.split("/")[0]);
 
   if (path.endsWith("/pending_deployments")) {
     if (method === "POST") {
@@ -385,10 +552,10 @@ function answerActionsRuns(method, path) {
           continue;
         }
 
-        state.approvals.push({
+        approvals.push({
           run_id: runId,
           environment_id: Number(field.slice("environment_ids[]=".length)),
-          atPoll: state.watchPolls,
+          atPoll: watchPolls(),
         });
       }
 
@@ -405,7 +572,11 @@ function answerActionsRuns(method, path) {
   return respond(runDetails(runId));
 }
 
-function answer() {
+function commitOf(path: string): string {
+  return path.split("/commits/")[1]?.split("/")[0] ?? "";
+}
+
+function answer(): void {
   const [command, subcommand] = args;
 
   // Claude Code on the web refuses GraphQL, which gh pr and gh repo call
@@ -413,9 +584,10 @@ function answer() {
     return refuse("HTTP 403: GitHub GraphQL is not available");
   }
 
-  if (command === "api") {
-    const method = args.includes("-X") ? option("-X") : "GET";
-    const path = args.find((argument) => argument.startsWith("repos/"));
+  const path = args.find((argument) => argument.startsWith("repos/"));
+
+  if (command === "api" && path !== undefined) {
+    const method = args.includes("-X") ? (option("-X") ?? "GET") : "GET";
 
     if (path === "repos/{owner}/{repo}") {
       return respond({ full_name: state.repo });
@@ -434,7 +606,7 @@ function answer() {
     }
 
     if (path.endsWith("/reviews")) {
-      state.polls++;
+      state.polls = polls() + 1;
       play();
 
       return respond([state.reviews]);
@@ -445,17 +617,17 @@ function answer() {
     }
 
     if (path.includes("/check-runs")) {
-      const sha = path.split("/commits/")[1].split("/")[0];
+      const sha = commitOf(path);
 
       if (path.includes("check_name=")) {
-        const name = decodeURIComponent(path.split("check_name=")[1]);
+        const name = decodeURIComponent(path.split("check_name=")[1] ?? "");
 
         return respond({
           check_runs: visibleChecks(sha).filter((check) => check.name === name),
         });
       }
 
-      state.watchPolls++;
+      state.watchPolls = watchPolls() + 1;
 
       const checks = visibleChecks(sha);
 
@@ -463,7 +635,7 @@ function answer() {
     }
 
     if (path.includes("/status")) {
-      const sha = path.split("/commits/")[1].split("/")[0];
+      const sha = commitOf(path);
       const statuses = (state.statuses ?? []).filter(
         (status) => !status.sha || status.sha === sha,
       );
@@ -479,7 +651,7 @@ function answer() {
     }
 
     if (path.includes("/protection/required_status_checks")) {
-      if (state.protection?.forbidden) {
+      if (state.protection && "forbidden" in state.protection) {
         return refuse(
           "HTTP 403: Resource not accessible by personal access token",
         );
@@ -498,10 +670,9 @@ function answer() {
   refuse(`fake gh does not know: gh ${args.join(" ")}`);
 }
 
-if (
-  process.env.FAKE_GH_STALL_ON &&
-  args.join(" ").includes(process.env.FAKE_GH_STALL_ON)
-) {
+const stallOn = process.env.FAKE_GH_STALL_ON;
+
+if (stallOn && args.join(" ").includes(stallOn)) {
   await new Promise((resolve) => setTimeout(resolve, 10_000));
 }
 

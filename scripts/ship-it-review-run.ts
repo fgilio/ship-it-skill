@@ -1,21 +1,27 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // Requests reviews through their labels and waits until each one answers.
 
 import {
   ScriptError,
   gh,
-  ghList,
+  ghRecord,
+  ghRecords,
+  isRecord,
   main,
+  numberOrNull,
   parseArguments,
   parsePullRequestNumber,
   parseReviewLabel,
   positiveNumber,
   printJson,
+  readPullRequest,
+  records,
   resolveRepository,
   sleep,
-} from "./lib.mjs";
+  stringOrNull,
+} from "./lib";
 
-const USAGE = `Usage: ship-it-review-run.mjs <pull request> <label>... [options]
+const USAGE = `Usage: ship-it-review-run.ts <pull request> <label>... [options]
 
 Requests a review for each label on the pull request's head commit, then
 waits until each review posted, was refused, ended without a review, or
@@ -25,7 +31,7 @@ head is reported without a new request. Prints the outcome as JSON.
 
 Arguments:
   <pull request>   A number or a github.com pull request URL
-  <label>          A review label, as ship-it-review-list.mjs prints it
+  <label>          A review label, as ship-it-review-list.ts prints it
 
 Options:
   --repo owner/name     The repository (default: the URL's, or the current directory's)
@@ -38,7 +44,57 @@ Options:
 // so the comment listing starts this much before the earliest request.
 const CLOCK_SKEW_MS = 2 * 60 * 1000;
 
-main(async () => {
+type ReviewStatus =
+  | "pending"
+  | "posted"
+  | "refused"
+  | "unanswered"
+  | "timeout"
+  | "closed"
+  | "superseded";
+
+interface ReviewOutcome {
+  reason?: string;
+  refusal_url?: string | null;
+  review_id?: number | null;
+  review_url?: string | null;
+  submitted_at?: string | null;
+}
+
+interface ReviewRequest extends ReviewOutcome {
+  label: string;
+  service: string;
+  kind: string;
+  status: ReviewStatus;
+  attempts: number;
+  requestedAt: number;
+  completedSeenAt: number | null;
+  knownCommentIds: Set<number>;
+  knownCheckIds: Set<number>;
+}
+
+interface Review {
+  id: number | null;
+  body: string | null;
+  html_url: string | null;
+  submitted_at: string | null;
+}
+
+interface Comment {
+  id: number | null;
+  body: string | null;
+  html_url: string | null;
+}
+
+interface CheckRun {
+  id: number | null;
+  status: string | null;
+  conclusion: string | null;
+  title: string | null;
+  started_at: string;
+}
+
+await main(async () => {
   const { flags, positionals } = parseArguments(process.argv.slice(2), {
     usage: USAGE,
     valueFlags: ["repo", "timeout", "interval", "retries"],
@@ -47,12 +103,12 @@ main(async () => {
 
   if (pullRequestArgument === undefined || labelNames.length === 0) {
     throw new ScriptError(
-      `ship-it-review-run.mjs needs a pull request and at least one label.\n\n${USAGE}`,
+      `ship-it-review-run.ts needs a pull request and at least one label.\n\n${USAGE}`,
     );
   }
 
   const repository = resolveRepository(flags.repo, pullRequestArgument);
-  const number = String(parsePullRequestNumber(pullRequestArgument));
+  const number = parsePullRequestNumber(pullRequestArgument);
   const timeoutMs =
     positiveNumber(flags.timeout ?? 30, "timeout", USAGE) * 60 * 1000;
   const intervalSeconds = positiveNumber(
@@ -67,14 +123,18 @@ main(async () => {
 
   const head = openHead(repository, number);
   const requests = reviewRequests(repository, labelNames);
-  const settled = [];
+  const settled: ReviewRequest[] = [];
 
-  const settle = (request, status, details = {}) => {
+  const settle = (
+    request: ReviewRequest,
+    status: ReviewStatus,
+    details: ReviewOutcome = {},
+  ) => {
     Object.assign(request, { status }, details);
     settled.push(request);
   };
 
-  const postedReviews = ghList(`repos/${repository}/pulls/${number}/reviews`);
+  const postedReviews = reviews(repository, number);
 
   for (const request of requests) {
     const review = markedReview(postedReviews, request, head);
@@ -89,38 +149,46 @@ main(async () => {
   requestReviews(repository, number, head, pending);
 
   while (pending.length > 0) {
+    // Each check waits for the last one: a poll, never a batch.
+    // oxlint-disable-next-line no-await-in-loop
     await sleep(intervalSeconds);
 
     const pullRequest = readPullRequest(repository, number);
 
     if (pullRequest.state !== "open") {
-      pending.forEach((request) =>
+      for (const request of pending) {
         settle(request, "closed", {
           reason: `The pull request is ${pullRequest.state}.`,
-        }),
-      );
+        });
+      }
       break;
     }
 
     if (pullRequest.head !== head) {
-      pending.forEach((request) =>
+      for (const request of pending) {
         settle(request, "superseded", {
           reason: `The head moved to ${pullRequest.head}. Request the review again for the new head.`,
-        }),
-      );
+        });
+      }
       break;
     }
 
     const earliestRequest = Math.min(
       ...pending.map((request) => request.requestedAt),
     );
-    const reviews = ghList(`repos/${repository}/pulls/${number}/reviews`);
-    const comments = ghList(
-      `repos/${repository}/issues/${number}/comments?since=${new Date(earliestRequest - CLOCK_SKEW_MS).toISOString()}`,
+    const currentReviews = reviews(repository, number);
+    const comments = issueComments(
+      repository,
+      number,
+      new Date(earliestRequest - CLOCK_SKEW_MS).toISOString(),
     );
-    const again = [];
+    const again: ReviewRequest[] = [];
 
-    const endAttempt = (request, status, reason) => {
+    const endAttempt = (
+      request: ReviewRequest,
+      status: ReviewStatus,
+      reason?: string | null,
+    ) => {
       if (request.attempts <= retries) {
         again.push(request);
 
@@ -131,7 +199,7 @@ main(async () => {
     };
 
     for (const request of pending) {
-      const review = markedReview(reviews, request, head);
+      const review = markedReview(currentReviews, request, head);
 
       if (review) {
         settle(request, "posted", reviewDetails(review));
@@ -142,7 +210,7 @@ main(async () => {
 
       if (refusal) {
         settle(request, "refused", {
-          reason: refusal.body.split("\n")[0].trim(),
+          reason: (refusal.body?.split("\n")[0] ?? "").trim(),
           refusal_url: refusal.html_url,
         });
         continue;
@@ -154,11 +222,7 @@ main(async () => {
         request.completedSeenAt ??= Date.now();
 
         if (Date.now() - request.completedSeenAt >= graceMs) {
-          endAttempt(
-            request,
-            "unanswered",
-            check.output?.title || check.conclusion,
-          );
+          endAttempt(request, "unanswered", check.title || check.conclusion);
         }
 
         continue;
@@ -178,7 +242,7 @@ main(async () => {
 
   printJson({
     repository,
-    pull_request: Number(number),
+    pull_request: number,
     head,
     head_moved_to: currentHead === head ? null : currentHead,
     reviews: requests.map(
@@ -193,7 +257,7 @@ main(async () => {
   });
 });
 
-function retryCount(value) {
+function retryCount(value: string): number {
   const count = Number(value);
 
   if (!Number.isInteger(count) || count < 0) {
@@ -205,7 +269,7 @@ function retryCount(value) {
   return count;
 }
 
-function openHead(repository, number) {
+function openHead(repository: string, number: number): string {
   const pullRequest = readPullRequest(repository, number);
 
   if (pullRequest.state !== "open") {
@@ -217,21 +281,12 @@ function openHead(repository, number) {
   return pullRequest.head;
 }
 
-/**
- * The pull request's state (`open`, `closed` or `merged`) and head commit.
- */
-function readPullRequest(repository, number) {
-  const pullRequest = gh(["api", `repos/${repository}/pulls/${number}`]);
-
-  return {
-    state: pullRequest.merged ? "merged" : pullRequest.state,
-    head: pullRequest.head.sha,
-  };
-}
-
-function reviewRequests(repository, labelNames) {
+function reviewRequests(
+  repository: string,
+  labelNames: string[],
+): ReviewRequest[] {
   const existing = new Set(
-    ghList(`repos/${repository}/labels?per_page=100`).map(({ name }) => name),
+    labelNamesOf(`repos/${repository}/labels?per_page=100`),
   );
 
   return [...new Set(labelNames)].map((label) => {
@@ -245,7 +300,7 @@ function reviewRequests(repository, labelNames) {
 
     if (!existing.has(label)) {
       throw new ScriptError(
-        `The label ${label} does not exist on ${repository}. ship-it-review-list.mjs lists the review labels it offers.`,
+        `The label ${label} does not exist on ${repository}. ship-it-review-list.ts lists the review labels it offers.`,
       );
     }
 
@@ -255,8 +310,20 @@ function reviewRequests(repository, labelNames) {
       kind: parsed.kind,
       status: "pending",
       attempts: 0,
+      requestedAt: 0,
+      completedSeenAt: null,
+      knownCommentIds: new Set(),
+      knownCheckIds: new Set(),
     };
   });
+}
+
+function labelNamesOf(path: string): string[] {
+  return ghRecords(path).map(({ name }) => String(name));
+}
+
+function idsOf(items: { id: number | null }[]): Set<number> {
+  return new Set(items.flatMap(({ id }) => (id === null ? [] : [id])));
 }
 
 /**
@@ -265,24 +332,25 @@ function reviewRequests(repository, labelNames) {
  * checks that exist before the edit belong to earlier requests, so the
  * wait never takes them for this request's answer.
  */
-function requestReviews(repository, number, head, requests) {
+function requestReviews(
+  repository: string,
+  number: number,
+  head: string,
+  requests: ReviewRequest[],
+): void {
   if (requests.length === 0) {
     return;
   }
 
-  const knownCommentIds = new Set(
-    ghList(`repos/${repository}/issues/${number}/comments`).map(({ id }) => id),
-  );
+  const knownCommentIds = idsOf(issueComments(repository, number));
 
   for (const request of requests) {
     request.knownCommentIds = knownCommentIds;
-    request.knownCheckIds = new Set(
-      checkRuns(repository, head, request.label).map(({ id }) => id),
-    );
+    request.knownCheckIds = idsOf(checkRuns(repository, head, request.label));
   }
 
   const labels = `repos/${repository}/issues/${number}/labels`;
-  const onPullRequest = new Set(ghList(labels).map(({ name }) => name));
+  const onPullRequest = new Set(labelNamesOf(labels));
   const stale = requests.filter(({ label }) => onPullRequest.has(label));
 
   for (const { label } of stale) {
@@ -304,23 +372,56 @@ function requestReviews(repository, number, head, requests) {
   }
 }
 
+function reviews(repository: string, number: number): Review[] {
+  return ghRecords(`repos/${repository}/pulls/${number}/reviews`).map(
+    (review) => ({
+      id: numberOrNull(review.id),
+      body: stringOrNull(review.body),
+      html_url: stringOrNull(review.html_url),
+      submitted_at: stringOrNull(review.submitted_at),
+    }),
+  );
+}
+
+function issueComments(
+  repository: string,
+  number: number,
+  since?: string,
+): Comment[] {
+  const query = since === undefined ? "" : `?since=${since}`;
+
+  return ghRecords(`repos/${repository}/issues/${number}/comments${query}`).map(
+    (comment) => ({
+      id: numberOrNull(comment.id),
+      body: stringOrNull(comment.body),
+      html_url: stringOrNull(comment.html_url),
+    }),
+  );
+}
+
 /**
  * The newest review that ends with a marker naming the request's kind
  * and the head: `<!-- <service>-review kind=<kind> sha=<head sha> ... -->`.
  * A marker quoted inside a review's text does not count.
  */
-function markedReview(reviews, { service, kind }, head) {
+function markedReview(
+  candidates: Review[],
+  { service, kind }: ReviewRequest,
+  head: string,
+): Review | undefined {
   const marker = new RegExp(
     `<!-- ${escapeRegExp(service)}-review kind=${escapeRegExp(kind)} sha=([0-9a-f]{40})(?: [^>]*)? -->\\s*$`,
   );
 
-  return reviews
+  return candidates
     .filter((review) => review.body?.match(marker)?.[1] === head)
-    .sort((a, b) => (b.submitted_at ?? "").localeCompare(a.submitted_at ?? ""))
+    .toSorted((a, b) =>
+      (b.submitted_at ?? "").localeCompare(a.submitted_at ?? ""),
+    )
     .at(0);
 }
 
-function reviewDetails(review) {
+function reviewDetails(review: Review): ReviewOutcome {
   return {
     review_id: review.id,
     review_url: review.html_url,
@@ -333,7 +434,10 @@ function reviewDetails(review) {
  * the label. The name must stand alone, so a refusal of
  * `x-review:code-review:high` is not taken for `x-review:code-review`.
  */
-function refusalComment(comments, { service, label, knownCommentIds }) {
+function refusalComment(
+  comments: Comment[],
+  { service, label, knownCommentIds }: ReviewRequest,
+): Comment | undefined {
   const marker = `<!-- ${service}-review-refused`;
   const naming = new RegExp(
     `(^|[^a-z0-9:-])${escapeRegExp(label)}($|[^a-z0-9:-])`,
@@ -341,7 +445,7 @@ function refusalComment(comments, { service, label, knownCommentIds }) {
 
   return comments.find(
     (comment) =>
-      !knownCommentIds.has(comment.id) &&
+      (comment.id === null || !knownCommentIds.has(comment.id)) &&
       comment.body?.includes(marker) &&
       naming.test(comment.body),
   );
@@ -351,22 +455,35 @@ function refusalComment(comments, { service, label, knownCommentIds }) {
  * The newest check run the service names after the label, among those
  * that appeared after the request.
  */
-function latestCheckRun(repository, head, { label, knownCheckIds }) {
+function latestCheckRun(
+  repository: string,
+  head: string,
+  { label, knownCheckIds }: ReviewRequest,
+): CheckRun | undefined {
   return checkRuns(repository, head, label)
-    .filter(({ id }) => !knownCheckIds.has(id))
-    .sort((a, b) => b.started_at.localeCompare(a.started_at))
+    .filter(({ id }) => id === null || !knownCheckIds.has(id))
+    .toSorted((a, b) => b.started_at.localeCompare(a.started_at))
     .at(0);
 }
 
-function checkRuns(repository, head, label) {
-  return (
-    gh([
-      "api",
-      `repos/${repository}/commits/${head}/check-runs?check_name=${encodeURIComponent(label)}`,
-    ]).check_runs ?? []
+function checkRuns(
+  repository: string,
+  head: string,
+  label: string,
+): CheckRun[] {
+  const response = ghRecord(
+    `repos/${repository}/commits/${head}/check-runs?check_name=${encodeURIComponent(label)}`,
   );
+
+  return records(response.check_runs).map((check) => ({
+    id: numberOrNull(check.id),
+    status: stringOrNull(check.status),
+    conclusion: stringOrNull(check.conclusion),
+    title: isRecord(check.output) ? stringOrNull(check.output.title) : null,
+    started_at: stringOrNull(check.started_at) ?? "",
+  }));
 }
 
-function escapeRegExp(text) {
+function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

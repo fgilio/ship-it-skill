@@ -1,14 +1,64 @@
-import assert from "node:assert/strict";
-import { afterEach, beforeEach, describe, test } from "node:test";
-import { createSandbox } from "./sandbox.mjs";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  setDefaultTimeout,
+  test,
+} from "bun:test";
+
+import type { FakeState } from "./fixtures/fake-gh";
+import { createSandbox } from "./sandbox";
+import type { Sandbox, ScriptResult } from "./sandbox";
 
 const HEAD = "a".repeat(40);
 const OTHER_HEAD = "b".repeat(40);
 const FAST = ["--interval", "0.01", "--timeout", "0.005"];
 
-let sandbox;
+interface ReviewRunOutput {
+  repository: string;
+  pull_request: number;
+  head: string;
+  head_moved_to: string | null;
+  reviews: {
+    label: string;
+    service: string;
+    kind: string;
+    status: string;
+    attempts: number;
+    reason?: string;
+    refusal_url?: string;
+    review_id?: number;
+    review_url?: string;
+    submitted_at?: string;
+  }[];
+}
 
-function writeState(overrides = {}) {
+function isReviewRunOutput(value: unknown): value is ReviewRunOutput {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "reviews" in value &&
+    Array.isArray(value.reviews)
+  );
+}
+
+function parseReviewRunOutput(stdout: string): ReviewRunOutput {
+  const output: unknown = JSON.parse(stdout);
+
+  if (!isReviewRunOutput(output)) {
+    throw new Error(`The review run printed no reviews: ${stdout}`);
+  }
+
+  return output;
+}
+
+// Each test runs the scripts as processes and waits through their polls.
+setDefaultTimeout(60_000);
+
+let sandbox: Sandbox;
+
+function writeState(overrides: Partial<FakeState> = {}): void {
   sandbox.writeState({
     repo: "acme/shop",
     labels: [
@@ -34,34 +84,38 @@ function writeState(overrides = {}) {
   });
 }
 
-function ghCalls() {
+function ghCalls(): string[][] {
   return sandbox.ghCalls();
 }
 
-function labelWrites() {
+function labelWrites(): string[][] {
   return ghCalls().filter(
     ([command, flag, method, path]) =>
       command === "api" &&
       flag === "-X" &&
-      ["POST", "DELETE"].includes(method) &&
-      path.startsWith("repos/acme/shop/issues/7/labels"),
+      ["POST", "DELETE"].includes(method ?? "") &&
+      path?.startsWith("repos/acme/shop/issues/7/labels"),
   );
 }
 
-function runScript(script, args, env = {}) {
+function runScript(
+  script: string,
+  args: string[],
+  env: Record<string, string> = {},
+): Promise<ScriptResult> {
   return sandbox.runScript(script, args, env);
 }
 
-async function runReviews(args) {
-  const result = await runScript("ship-it-review-run.mjs", [
+async function runReviews(args: string[]): Promise<ReviewRunOutput> {
+  const result = await runScript("ship-it-review-run.ts", [
     "7",
     ...FAST,
     ...args,
   ]);
 
-  assert.equal(result.code, 0, result.stderr);
+  expect(result.code, result.stderr).toBe(0);
 
-  return JSON.parse(result.stdout);
+  return parseReviewRunOutput(result.stdout);
 }
 
 beforeEach(() => {
@@ -72,7 +126,7 @@ afterEach(() => {
   sandbox.remove();
 });
 
-describe("ship-it-review-list.mjs", () => {
+describe("ship-it-review-list.ts", () => {
   test("lists the labels that tag a focus, by focus then label", async () => {
     writeState({
       labels: [
@@ -108,10 +162,10 @@ describe("ship-it-review-list.mjs", () => {
       ],
     });
 
-    const result = await runScript("ship-it-review-list.mjs", []);
+    const result = await runScript("ship-it-review-list.ts", []);
 
-    assert.equal(result.code, 0, result.stderr);
-    assert.deepEqual(JSON.parse(result.stdout), [
+    expect(result.code, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual([
       {
         label: "otherbot-review:bugs",
         service: "otherbot",
@@ -144,17 +198,17 @@ describe("ship-it-review-list.mjs", () => {
       labels: [{ name: "bug", description: "Something is broken" }],
     });
 
-    const result = await runScript("ship-it-review-list.mjs", [
+    const result = await runScript("ship-it-review-list.ts", [
       "--repo",
       "acme/shop",
     ]);
 
-    assert.equal(result.code, 0, result.stderr);
-    assert.deepEqual(JSON.parse(result.stdout), []);
+    expect(result.code, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual([]);
   });
 });
 
-describe("ship-it-review-run.mjs", () => {
+describe("ship-it-review-run.ts", () => {
   test("requests every label in one edit and reports each posted review", async () => {
     writeState({
       outcomes: {
@@ -168,24 +222,23 @@ describe("ship-it-review-run.mjs", () => {
       "reviewbot-review:simplify",
     ]);
 
-    assert.equal(output.head, HEAD);
-    assert.deepEqual(
+    expect(output.head).toBe(HEAD);
+    expect(
       output.reviews.map(({ label, status, attempts }) => ({
         label,
         status,
         attempts,
       })),
-      [
-        {
-          label: "reviewbot-review:code-review",
-          status: "posted",
-          attempts: 1,
-        },
-        { label: "reviewbot-review:simplify", status: "posted", attempts: 1 },
-      ],
-    );
-    assert.match(output.reviews[0].review_url, /pullrequestreview-/);
-    assert.deepEqual(labelWrites(), [
+    ).toEqual([
+      {
+        label: "reviewbot-review:code-review",
+        status: "posted",
+        attempts: 1,
+      },
+      { label: "reviewbot-review:simplify", status: "posted", attempts: 1 },
+    ]);
+    expect(output.reviews[0]?.review_url).toMatch(/pullrequestreview-/);
+    expect(labelWrites()).toEqual([
       [
         "api",
         "-X",
@@ -213,10 +266,10 @@ describe("ship-it-review-run.mjs", () => {
 
     const output = await runReviews(["reviewbot-review:simplify"]);
 
-    assert.equal(output.reviews[0].status, "posted");
-    assert.equal(output.reviews[0].attempts, 0);
-    assert.equal(output.reviews[0].review_id, 1);
-    assert.deepEqual(labelWrites(), []);
+    expect(output.reviews[0]?.status).toBe("posted");
+    expect(output.reviews[0]?.attempts).toBe(0);
+    expect(output.reviews[0]?.review_id).toBe(1);
+    expect(labelWrites()).toEqual([]);
   });
 
   test("asks again when the posted review covers an older head", async () => {
@@ -233,9 +286,9 @@ describe("ship-it-review-run.mjs", () => {
 
     const output = await runReviews(["reviewbot-review:simplify"]);
 
-    assert.equal(output.reviews[0].status, "posted");
-    assert.equal(output.reviews[0].attempts, 1);
-    assert.notEqual(output.reviews[0].review_id, 1);
+    expect(output.reviews[0]?.status).toBe("posted");
+    expect(output.reviews[0]?.attempts).toBe(1);
+    expect(output.reviews[0]?.review_id).not.toBe(1);
   });
 
   test("reports a refusal with its reason", async () => {
@@ -249,9 +302,9 @@ describe("ship-it-review-run.mjs", () => {
 
     const output = await runReviews(["reviewbot-review:simplify"]);
 
-    assert.equal(output.reviews[0].status, "refused");
-    assert.match(output.reviews[0].reason, /already has a simplify review/);
-    assert.match(output.reviews[0].refusal_url, /issuecomment-/);
+    expect(output.reviews[0]?.status).toBe("refused");
+    expect(output.reviews[0]?.reason).toMatch(/already has a simplify review/);
+    expect(output.reviews[0]?.refusal_url).toMatch(/issuecomment-/);
   });
 
   test("does not take the refusal of a leveled label for the plain one", async () => {
@@ -270,7 +323,7 @@ describe("ship-it-review-run.mjs", () => {
 
     const output = await runReviews(["reviewbot-review:code-review"]);
 
-    assert.equal(output.reviews[0].status, "posted");
+    expect(output.reviews[0]?.status).toBe("posted");
   });
 
   test("asks again once when a request ends without a review", async () => {
@@ -285,9 +338,9 @@ describe("ship-it-review-run.mjs", () => {
 
     const output = await runReviews(["reviewbot-review:simplify"]);
 
-    assert.equal(output.reviews[0].status, "posted");
-    assert.equal(output.reviews[0].attempts, 2);
-    assert.equal(labelWrites().length, 2);
+    expect(output.reviews[0]?.status).toBe("posted");
+    expect(output.reviews[0]?.attempts).toBe(2);
+    expect(labelWrites().length).toBe(2);
   });
 
   test("reports no review after the retries run out", async () => {
@@ -297,9 +350,9 @@ describe("ship-it-review-run.mjs", () => {
 
     const output = await runReviews(["reviewbot-review:simplify"]);
 
-    assert.equal(output.reviews[0].status, "unanswered");
-    assert.equal(output.reviews[0].reason, "No answer");
-    assert.equal(output.reviews[0].attempts, 2);
+    expect(output.reviews[0]?.status).toBe("unanswered");
+    expect(output.reviews[0]?.reason).toBe("No answer");
+    expect(output.reviews[0]?.attempts).toBe(2);
   });
 
   test("reports a timeout when nothing answers", async () => {
@@ -311,8 +364,8 @@ describe("ship-it-review-run.mjs", () => {
       "0",
     ]);
 
-    assert.equal(output.reviews[0].status, "timeout");
-    assert.equal(output.reviews[0].attempts, 1);
+    expect(output.reviews[0]?.status).toBe("timeout");
+    expect(output.reviews[0]?.attempts).toBe(1);
   });
 
   test("stops waiting when the head moves", async () => {
@@ -322,8 +375,8 @@ describe("ship-it-review-run.mjs", () => {
 
     const output = await runReviews(["reviewbot-review:simplify"]);
 
-    assert.equal(output.reviews[0].status, "superseded");
-    assert.match(output.reviews[0].reason, new RegExp(OTHER_HEAD));
+    expect(output.reviews[0]?.status).toBe("superseded");
+    expect(output.reviews[0]?.reason).toMatch(new RegExp(OTHER_HEAD));
   });
 
   test("stops waiting when the pull request closes", async () => {
@@ -333,7 +386,7 @@ describe("ship-it-review-run.mjs", () => {
 
     const output = await runReviews(["reviewbot-review:simplify"]);
 
-    assert.equal(output.reviews[0].status, "closed");
+    expect(output.reviews[0]?.status).toBe("closed");
   });
 
   test("takes a label still on the pull request off before adding it", async () => {
@@ -349,39 +402,32 @@ describe("ship-it-review-run.mjs", () => {
 
     const output = await runReviews(["reviewbot-review:simplify"]);
 
-    assert.equal(output.reviews[0].status, "posted");
-    assert.deepEqual(
-      labelWrites().map((call) => call.slice(2)),
+    expect(output.reviews[0]?.status).toBe("posted");
+    expect(labelWrites().map((call) => call.slice(2))).toEqual([
+      ["DELETE", "repos/acme/shop/issues/7/labels/reviewbot-review%3Asimplify"],
       [
-        [
-          "DELETE",
-          "repos/acme/shop/issues/7/labels/reviewbot-review%3Asimplify",
-        ],
-        [
-          "POST",
-          "repos/acme/shop/issues/7/labels",
-          "-f",
-          "labels[]=reviewbot-review:simplify",
-        ],
+        "POST",
+        "repos/acme/shop/issues/7/labels",
+        "-f",
+        "labels[]=reviewbot-review:simplify",
       ],
-    );
+    ]);
   });
 
   test("takes the repository and number from a pull request URL", async () => {
     writeState({ outcomes: { "reviewbot-review:simplify": [{ review: {} }] } });
 
-    const result = await runScript("ship-it-review-run.mjs", [
+    const result = await runScript("ship-it-review-run.ts", [
       "https://github.com/acme/shop/pull/7",
       "reviewbot-review:simplify",
       ...FAST,
     ]);
 
-    assert.equal(result.code, 0, result.stderr);
-    assert.equal(JSON.parse(result.stdout).repository, "acme/shop");
-    assert.equal(
+    expect(result.code, result.stderr).toBe(0);
+    expect(parseReviewRunOutput(result.stdout).repository).toBe("acme/shop");
+    expect(
       ghCalls().some((call) => call.includes("repos/{owner}/{repo}")),
-      false,
-    );
+    ).toBe(false);
   });
 
   test("calls only the REST API, which sessions that refuse GraphQL still serve", async () => {
@@ -395,17 +441,16 @@ describe("ship-it-review-run.mjs", () => {
       outcomes: { "reviewbot-review:simplify": [{ review: {} }] },
     });
 
-    const result = await runScript("ship-it-review-run.mjs", [
+    const result = await runScript("ship-it-review-run.ts", [
       "7",
       "reviewbot-review:simplify",
       ...FAST,
     ]);
 
-    assert.equal(result.code, 0, result.stderr);
-    assert.deepEqual(
-      [...new Set(ghCalls().map(([command]) => command))],
-      ["api"],
-    );
+    expect(result.code, result.stderr).toBe(0);
+    expect([...new Set(ghCalls().map(([command]) => command))]).toEqual([
+      "api",
+    ]);
   });
 
   test("refuses a closed pull request", async () => {
@@ -413,27 +458,26 @@ describe("ship-it-review-run.mjs", () => {
       pr: { number: 7, state: "MERGED", headRefOid: HEAD, labels: [] },
     });
 
-    const result = await runScript("ship-it-review-run.mjs", [
+    const result = await runScript("ship-it-review-run.ts", [
       "7",
       "reviewbot-review:simplify",
     ]);
 
-    assert.equal(result.code, 1);
-    assert.match(result.stderr, /Pull request #7 on acme\/shop is merged/);
-    assert.deepEqual(labelWrites(), []);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toMatch(/Pull request #7 on acme\/shop is merged/);
+    expect(labelWrites()).toEqual([]);
   });
 
   test("refuses a label the repository does not have", async () => {
     writeState();
 
-    const result = await runScript("ship-it-review-run.mjs", [
+    const result = await runScript("ship-it-review-run.ts", [
       "7",
       "reviewbot-review:security",
     ]);
 
-    assert.equal(result.code, 1);
-    assert.match(
-      result.stderr,
+    expect(result.code).toBe(1);
+    expect(result.stderr).toMatch(
       /The label reviewbot-review:security does not exist on acme\/shop/,
     );
   });
@@ -441,24 +485,24 @@ describe("ship-it-review-run.mjs", () => {
   test("refuses a label that requests no review", async () => {
     writeState();
 
-    const result = await runScript("ship-it-review-run.mjs", ["7", "bug"]);
+    const result = await runScript("ship-it-review-run.ts", ["7", "bug"]);
 
-    assert.equal(result.code, 1);
-    assert.match(result.stderr, /bug is not a review label/);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toMatch(/bug is not a review label/);
   });
 
   test("refuses a negative retry count", async () => {
     writeState();
 
-    const result = await runScript("ship-it-review-run.mjs", [
+    const result = await runScript("ship-it-review-run.ts", [
       "7",
       "reviewbot-review:simplify",
       "--retries",
       "-1",
     ]);
 
-    assert.equal(result.code, 1);
-    assert.match(result.stderr, /--retries option needs a whole number/);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toMatch(/--retries option needs a whole number/);
   });
   test("does not take a marker quoted inside a review for an answer", async () => {
     writeState({
@@ -474,9 +518,9 @@ describe("ship-it-review-run.mjs", () => {
 
     const output = await runReviews(["reviewbot-review:simplify"]);
 
-    assert.equal(output.reviews[0].status, "posted");
-    assert.equal(output.reviews[0].attempts, 1);
-    assert.notEqual(output.reviews[0].review_id, 1);
+    expect(output.reviews[0]?.status).toBe("posted");
+    expect(output.reviews[0]?.attempts).toBe(1);
+    expect(output.reviews[0]?.review_id).not.toBe(1);
   });
 
   test("ignores a refusal that came before the request", async () => {
@@ -495,7 +539,7 @@ describe("ship-it-review-run.mjs", () => {
 
     const output = await runReviews(["reviewbot-review:simplify"]);
 
-    assert.equal(output.reviews[0].status, "posted");
+    expect(output.reviews[0]?.status).toBe("posted");
   });
 
   test("ignores a check that finished before the request", async () => {
@@ -522,8 +566,8 @@ describe("ship-it-review-run.mjs", () => {
       "0.1",
     ]);
 
-    assert.equal(output.reviews[0].status, "posted");
-    assert.equal(output.reviews[0].attempts, 1);
+    expect(output.reviews[0]?.status).toBe("posted");
+    expect(output.reviews[0]?.attempts).toBe(1);
   });
 
   test("reports a head that moved as the review posted", async () => {
@@ -535,9 +579,9 @@ describe("ship-it-review-run.mjs", () => {
 
     const output = await runReviews(["reviewbot-review:simplify"]);
 
-    assert.equal(output.reviews[0].status, "posted");
-    assert.equal(output.head, HEAD);
-    assert.equal(output.head_moved_to, OTHER_HEAD);
+    expect(output.reviews[0]?.status).toBe("posted");
+    expect(output.head).toBe(HEAD);
+    expect(output.head_moved_to).toBe(OTHER_HEAD);
   });
 
   test("finds a label past the first page of labels", async () => {
@@ -554,40 +598,39 @@ describe("ship-it-review-run.mjs", () => {
       outcomes: { "reviewbot-review:late": [{ review: {} }] },
     });
 
-    const listed = await runScript("ship-it-review-list.mjs", []);
+    const listed = await runScript("ship-it-review-list.ts", []);
     const output = await runReviews(["reviewbot-review:late"]);
 
-    assert.deepEqual(
-      JSON.parse(listed.stdout).map(({ label }) => label),
-      ["reviewbot-review:late"],
-    );
-    assert.equal(output.reviews[0].status, "posted");
+    expect(JSON.parse(listed.stdout)).toEqual([
+      expect.objectContaining({ label: "reviewbot-review:late" }),
+    ]);
+    expect(output.reviews[0]?.status).toBe("posted");
   });
 
   test("stops with an error when a gh call stalls", async () => {
     writeState();
 
     const result = await runScript(
-      "ship-it-review-run.mjs",
+      "ship-it-review-run.ts",
       ["7", "reviewbot-review:simplify", ...FAST],
       { FAKE_GH_STALL_ON: "/reviews", SHIP_IT_GH_TIMEOUT_SECONDS: "0.5" },
     );
 
-    assert.equal(result.code, 1);
-    assert.match(result.stderr, /did not answer within 0.5 seconds/);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toMatch(/did not answer within 0.5 seconds/);
   });
 
   test("points to the MCP reference when gh is missing", async () => {
     writeState();
 
     const result = await runScript(
-      "ship-it-review-run.mjs",
+      "ship-it-review-run.ts",
       ["7", "reviewbot-review:simplify", ...FAST],
       { PATH: sandbox.root },
     );
 
-    assert.equal(result.code, 1);
-    assert.match(result.stderr, /Unable to find the gh executable/);
-    assert.match(result.stderr, /references\/github\.md/);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toMatch(/Unable to find the gh executable/);
+    expect(result.stderr).toMatch(/references\/github\.md/);
   });
 });
