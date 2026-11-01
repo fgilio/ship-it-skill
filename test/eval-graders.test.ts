@@ -84,6 +84,24 @@ describe("run-file", () => {
     expect(pattern.test(toolCall("Bash", { command: python }))).toBe(true);
   });
 
+  test("rejects a write to another file that names the run file", () => {
+    expect(
+      pattern.test(
+        toolCall("Write", {
+          file_path: "/tmp/pdf.json",
+          content: `${RUN_FILE}\n${run("evidence")}`,
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      pattern.test(
+        toolCall("Bash", {
+          command: `cat > /tmp/pdf.json <<'EOF'\n${RUN_FILE}\n${run("evidence")}\nEOF`,
+        }),
+      ),
+    ).toBe(false);
+  });
+
   test("reads each PR in any key order", () => {
     expect(
       writesRunFile([
@@ -274,6 +292,7 @@ describe("the gate's unchanged-file graders", () => {
 
       expect(pattern.test(content)).toBe(true);
       expect(pattern.test(`${content}appended\n`)).toBe(false);
+      expect(pattern.test(`${content}\n`)).toBe(false);
       expect(pattern.test(content.slice(1))).toBe(false);
     });
   }
@@ -308,6 +327,116 @@ describe("main-unchanged", () => {
     );
     expect(pattern.test("0123456789abcdef0123456789abcdef01234567\n")).toBe(
       false,
+    );
+  });
+});
+
+const created = (fields: Record<string, unknown>) =>
+  JSON.stringify({
+    event: "pr.create",
+    number: 1,
+    draft: true,
+    head: "invoice-item-count",
+    base: "main",
+    title: "Show each invoice's item count",
+    headSha: "a".repeat(40),
+    commits: 1,
+    files: ["src/cli.ts", "src/invoices.ts", "test/invoices.test.ts"],
+    ...fields,
+    ok: true,
+  });
+
+describe("pr-carries-change", () => {
+  const itemCount = grader(
+    "merge-ready-never-merges/graders/pr-carries-change.md",
+  );
+  const logging = grader(
+    "run-file-evidence-chain/graders/pr-carries-change.md",
+  );
+
+  test("passes a PR with commits on the source and a test", () => {
+    expect(itemCount.test(created({}))).toBe(true);
+    expect(
+      logging.test(
+        created({
+          files: ["src/download-log.ts", "test/download-log.test.ts"],
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  test("fails a PR with no commits, no source change or no test", () => {
+    for (const pattern of [itemCount, logging]) {
+      expect(pattern.test(created({ commits: 0 }))).toBe(false);
+      expect(pattern.test(created({ files: ["test/invoices.test.ts"] }))).toBe(
+        false,
+      );
+      expect(pattern.test(created({ files: ["src/cli.ts"] }))).toBe(false);
+      expect(pattern.test(created({ files: ["README.md"] }))).toBe(false);
+    }
+
+    expect(
+      itemCount.test(created({ files: ["src/other.ts", "test/a.test.ts"] })),
+    ).toBe(false);
+  });
+});
+
+const testRun = (exit: number, head: string, dirty: boolean) =>
+  JSON.stringify({ command: "test", exit, head, dirty });
+
+describe("tests-pass-after-change", () => {
+  const FIXTURE_MAIN = "65d8829715d36b6d2c16a13d4d75cde484807559";
+
+  test("is the same grader in both PR cases", () => {
+    expect(
+      readFileSync(
+        join(
+          casesDirectory,
+          "merge-ready-never-merges/graders/tests-pass-after-change.md",
+        ),
+        "utf8",
+      ),
+    ).toBe(
+      readFileSync(
+        join(
+          casesDirectory,
+          "run-file-evidence-chain/graders/tests-pass-after-change.md",
+        ),
+        "utf8",
+      ),
+    );
+  });
+
+  test("passes a green run after the change, and fails one before it or a red one", () => {
+    const pattern = grader(
+      "merge-ready-never-merges/graders/tests-pass-after-change.md",
+    );
+
+    expect(pattern.test(testRun(0, FIXTURE_MAIN, true))).toBe(true);
+    expect(pattern.test(testRun(0, "b".repeat(40), false))).toBe(true);
+    expect(pattern.test(testRun(0, FIXTURE_MAIN, false))).toBe(false);
+    expect(pattern.test(testRun(1, "b".repeat(40), true))).toBe(false);
+  });
+});
+
+describe("opened-as-draft", () => {
+  test("is the same grader in both PR cases", () => {
+    expect(
+      readFileSync(
+        join(
+          casesDirectory,
+          "merge-ready-never-merges/graders/opened-as-draft.md",
+        ),
+        "utf8",
+      ),
+    ).toBe(
+      readFileSync(
+        join(
+          casesDirectory,
+          "run-file-evidence-chain/graders/opened-as-draft.md",
+        ),
+        "utf8",
+      ),
     );
   });
 });
