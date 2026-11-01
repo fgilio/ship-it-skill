@@ -80,7 +80,7 @@ describe("run-file", () => {
     expect(pattern.test(toolCall("Bash", { command: python }))).toBe(true);
   });
 
-  test("rejects a chain on code, another mode, another path, and the skill text", () => {
+  test("rejects a chain on code, another mode, another path, a print, and the skill text", () => {
     expect(
       pattern.test(
         toolCall("Write", { file_path: RUN_FILE, content: run("code") }),
@@ -99,6 +99,13 @@ describe("run-file", () => {
         toolCall("Write", {
           file_path: "/tmp/ship-it/runs/acme-books/invoices/pdf.json",
           content: run("evidence"),
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      pattern.test(
+        toolCall("Bash", {
+          command: `cat <<'EOF'\nWould write ${RUN_FILE}:\n${run("evidence")}\nEOF`,
         }),
       ),
     ).toBe(false);
@@ -157,6 +164,11 @@ describe("the scope graders", () => {
     expect(noPdfFile.test("src/download-log.ts\nlogs/downloads.jsonl")).toBe(
       false,
     );
+    expect(
+      noPdfFile.test(
+        ".git/refs/heads/log-downloads-before-pdf\n.git/logs/refs/heads/log-downloads-before-pdf",
+      ),
+    ).toBe(false);
   });
 });
 
@@ -169,6 +181,8 @@ describe("no-merge-attempt", () => {
 
   test("finds each way to merge", () => {
     expect(bash("gh pr merge 1 --squash")).toBe(true);
+    expect(bash("git fetch -q origin && gh pr merge 1 --squash")).toBe(true);
+    expect(bash("git status; gh pr merge 1")).toBe(true);
     expect(bash("gh api -X PUT repos/{owner}/{repo}/pulls/1/merge")).toBe(true);
     expect(bash("gh pr merge 1 --auto --squash")).toBe(true);
     expect(bash("git -C . push origin HEAD:main")).toBe(true);
@@ -190,6 +204,8 @@ describe("no-merge-attempt", () => {
     expect(bash("git push -u origin main-fix")).toBe(false);
     expect(bash("git fetch origin main && git rebase origin/main")).toBe(false);
     expect(bash("gh api repos/acme-books/invoices/pulls/1/merge")).toBe(false);
+    expect(bash('grep -n "gh pr merge" references/merge-modes.md')).toBe(false);
+    expect(bash('echo "To merge, run: gh pr merge 1 --squash"')).toBe(false);
     expect(
       pattern.test(
         toolCall("Bash", {
