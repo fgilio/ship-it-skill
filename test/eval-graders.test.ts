@@ -524,10 +524,26 @@ describe("marked-ready", () => {
 
   sameGraderInBothCases("marked-ready.md");
 
-  test("passes a CI read of the head, then ready on it", () => {
+  test("passes a CI read of the head, ready on it, and a read again", () => {
+    expect(
+      pattern.test(
+        logLines(
+          prCreated(HEAD),
+          ciChecks(HEAD),
+          prReady(HEAD),
+          ciChecks(HEAD),
+        ),
+      ),
+    ).toBe(true);
+  });
+
+  test("fails a session that marks the PR ready and stops watching", () => {
     expect(
       pattern.test(logLines(prCreated(HEAD), ciChecks(HEAD), prReady(HEAD))),
-    ).toBe(true);
+    ).toBe(false);
+    expect(
+      pattern.test(logLines(ciChecks(HEAD), prReady(HEAD), ciChecks(OTHER))),
+    ).toBe(false);
   });
 
   test("fails ready with no CI read before it, or a read of another commit", () => {
