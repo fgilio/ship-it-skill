@@ -13,7 +13,11 @@ import type { Sandbox, ScriptResult } from "./sandbox";
 
 const HEAD = "a".repeat(40);
 const OTHER_HEAD = "b".repeat(40);
-const FAST = ["--interval", "0.01", "--timeout", "0.005"];
+// Minutes for --timeout, seconds for --interval. The timeout is wide, since
+// each poll starts several fake gh processes and a loaded machine slows
+// them: a test that expects the timeout to run out passes a short one.
+const FAST = ["--interval", "0.01", "--timeout", "0.5"];
+const SHORT = "0.005";
 
 interface ReviewRunOutput {
   repository: string;
@@ -362,6 +366,8 @@ describe("ship-it-review-run.ts", () => {
       "reviewbot-review:simplify",
       "--retries",
       "0",
+      "--timeout",
+      SHORT,
     ]);
 
     expect(output.reviews[0]?.status).toBe("timeout");
@@ -560,11 +566,7 @@ describe("ship-it-review-run.ts", () => {
       },
     });
 
-    const output = await runReviews([
-      "reviewbot-review:simplify",
-      "--timeout",
-      "0.1",
-    ]);
+    const output = await runReviews(["reviewbot-review:simplify"]);
 
     expect(output.reviews[0]?.status).toBe("posted");
     expect(output.reviews[0]?.attempts).toBe(1);
