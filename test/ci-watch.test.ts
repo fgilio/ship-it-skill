@@ -840,6 +840,24 @@ describe("ship-it-ci-watch.ts on a pull request", () => {
       /must be a number or a github.com pull request URL/,
     );
   });
+
+  test("fails when the required check's head shows nothing within --first-check", async () => {
+    writeState({ rules: [requireContexts("ci-success")] });
+
+    const result = await sandbox.runScript("ship-it-ci-watch.ts", [
+      "7",
+      ...FAST,
+      "--first-check",
+      SHORT,
+    ]);
+    const output = parseWatchOutput(result.stdout);
+
+    expect(result.code).toBe(1);
+    expect(result.stderr).toMatch(new RegExp(`^Nothing appeared on ${HEAD}`));
+    expect(output.result).toBe("none");
+    expect(output.pull_request).toBe(7);
+    expect(output.missing).toEqual(["ci-success"]);
+  });
 });
 
 describe("ship-it-ci-watch.ts on a commit", () => {
@@ -1027,12 +1045,53 @@ describe("ship-it-ci-watch.ts on a commit", () => {
     ]);
   });
 
-  test("reports none when no check registers", async () => {
+  test("fails when nothing appears on the commit within --first-check", async () => {
     writeState();
+
+    const result = await sandbox.runScript("ship-it-ci-watch.ts", [
+      HEAD,
+      ...FAST,
+      "--register",
+      SHORT,
+      "--first-check",
+      SHORT,
+    ]);
+    const output = parseWatchOutput(result.stdout);
+
+    expect(result.code).toBe(1);
+    expect(result.stderr).toMatch(
+      new RegExp(`^Nothing appeared on ${HEAD} within \\d+ seconds`),
+    );
+    expect(result.stderr).toMatch(/Either CI never started for this head/);
+    expect(output.result).toBe("none");
+    expect(output.watched).toEqual([]);
+  });
+
+  test("fails when nothing appears before the watch times out", async () => {
+    writeState();
+
+    const result = await sandbox.runScript("ship-it-ci-watch.ts", [
+      HEAD,
+      ...FAST,
+      "--timeout",
+      SHORT,
+    ]);
+
+    expect(result.code).toBe(1);
+    expect(result.stderr).toMatch(/^Nothing appeared on /);
+    expect(parseWatchOutput(result.stdout).result).toBe("none");
+  });
+
+  test("waits past --register for the first check to appear", async () => {
+    writeState({
+      checkRuns: [
+        check("lint", { run_id: null, appearsAtPoll: 15, completesAtPoll: 16 }),
+      ],
+    });
 
     const output = await watch(HEAD, ["--register", SHORT]);
 
-    expect(output.result).toBe("none");
-    expect(output.watched).toEqual([]);
+    expect(output.result).toBe("passed");
+    expect(output.passed).toEqual(["lint"]);
   });
 });

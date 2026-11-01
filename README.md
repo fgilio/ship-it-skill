@@ -50,7 +50,7 @@ The review skill works with any review service that follows one protocol, and na
 
 ## CI watch
 
-`scripts/ship-it-ci-watch.mjs` watches a PR's head, or a commit, through the REST API, and prints the outcome as JSON. For a PR it watches the checks the merge requires, read from the base branch's rulesets and branch protection, and every check but a review service's when the repository requires none. It gives the checks two minutes to register after a push.
+`scripts/ship-it-ci-watch.mjs` watches a PR's head, or a commit, through the REST API, and prints the outcome as JSON. For a PR it watches the checks the merge requires, read from the base branch's rulesets and branch protection, and every check but a review service's when the repository requires none. It waits up to five minutes for the first check or run to appear after a push, and fails when none does, then gives the checks two minutes to register while nothing runs.
 
 A job that waits for an environment's approval is a manual gate. The watch lists each one and never waits for it unless the merge requires it, so a staging preview that nobody approved does not hold a PR. Approving a gate takes your permission: `/ship-it:deploy`'s invocation covers its deploy's gates, `--approve-gates` covers a run, and otherwise the first gate met raises one question for the whole invocation.
 

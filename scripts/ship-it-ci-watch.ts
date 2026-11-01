@@ -46,6 +46,8 @@ approves the named environments only.
 
 Results: passed, failed, gated, none (no check registered in time),
 timeout, superseded (the head moved) and closed (the pull request closed).
+When nothing at all appears on the head (no check, status or workflow
+run) within --first-check, the result is none and the script exits 1.
 
 Arguments:
   <pull request>   A number or a github.com pull request URL
@@ -56,6 +58,7 @@ Options:
   --timeout <minutes>               How long the watch waits in all (default: 45)
   --interval <seconds>              Time between reads (default: 30)
   --register <minutes>              How long the checks get to register while nothing runs (default: 2)
+  --first-check <minutes>           How long a head with nothing on it waits for its first check or run (default: 5)
   --approve-gates[=<environment>,...]  Approve each manual gate the user can approve, or those of the named environments
 `;
 
@@ -242,6 +245,16 @@ class Watch {
       this.suspectedFailedRunIds.has(run.id),
     );
     this.suspectedFailedRunIds = new Set(candidates.map(({ id }) => id));
+  }
+
+  /**
+   * Whether the head shows anything at all: a check or status that is
+   * not a review service's, or a workflow run.
+   */
+  get anythingAppeared(): boolean {
+    return (
+      this.runs.size > 0 || this.checks.some((check) => !isReviewCheck(check))
+    );
   }
 
   /**
@@ -520,7 +533,7 @@ function answers(check: Check, context: RequiredContext): boolean {
 await main(async () => {
   const { flags, positionals } = parseArguments(process.argv.slice(2), {
     usage: USAGE,
-    valueFlags: ["repo", "timeout", "interval", "register"],
+    valueFlags: ["repo", "timeout", "interval", "register", "first-check"],
     optionalValueFlags: ["approve-gates"],
   });
   const [target] = positionals;
@@ -541,6 +554,8 @@ await main(async () => {
   );
   const registerMs =
     positiveNumber(flags.register ?? 2, "register", USAGE) * 60_000;
+  const firstCheckMs =
+    positiveNumber(flags["first-check"] ?? 5, "first-check", USAGE) * 60_000;
   const approving = approvedEnvironments(flags["approve-gates"]);
 
   const subject = COMMIT_SHA.test(target)
@@ -551,6 +566,7 @@ await main(async () => {
   const startedAt = Date.now();
   const elapsed = () => Date.now() - startedAt;
   let registered = false;
+  let appeared = false;
   let quietSince = startedAt;
 
   for (let poll = 0; ; poll++) {
@@ -579,6 +595,27 @@ await main(async () => {
 
     if (!registered) {
       registered = watch.isRegistered();
+    }
+
+    if (!appeared && watch.anythingAppeared) {
+      appeared = true;
+      // The registration window counts from the first sign of CI.
+      quietSince = Date.now();
+    }
+
+    // Right after a push, the head can show nothing for a while: no run,
+    // no check. Running out of that wait is an error, since a head CI
+    // never reached is never a pass.
+    if (!appeared && elapsed() >= Math.min(firstCheckMs, timeoutMs)) {
+      watch.finish("none");
+
+      throw new ScriptError(
+        `Nothing appeared on ${subject.sha} within ${Math.round(elapsed() / 1000)} seconds: no check run, no commit status and no workflow run. Either CI never started for this head (check the workflows' triggers and the Actions tab), or the repository runs no CI on it.`,
+      );
+    }
+
+    if (!appeared) {
+      continue;
     }
 
     // A required job registers once its dependencies finish, so the
