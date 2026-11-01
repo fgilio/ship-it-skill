@@ -49,3 +49,16 @@ Each run gets a temporary home, an empty workspace, and only this plugin. These 
 - **Writes**: the workspace and the temporary home, except `~/.claude`, which no tool can write, whatever `--allow-tools` grants. The `run-file-evidence-chain` case grades the run file from the tool call that writes it, since the file never lands. Writes to `.git/config` are refused too, so the scaffold sets every git setting, and `git push -u` pushes but cannot record the upstream.
 - **git**: the macOS `/usr/bin/git` shim needs a cache directory the sandbox refuses, so `.fake-bin/git` runs the git binary the scaffold found. The remote carries its own `.fake-bin` for the same reason.
 - **Graders**: no custom code. `files` lists the paths the session created, `.git` internals included, so a new branch shows as `.git/refs/heads/<name>`. A file target reads one exact path, with no glob. A slash command in the prompt loads the skill without a Skill tool call, so no grader can check that the skill fired.
+
+## Known limits
+
+The graders are regular expressions over the transcript, the files the session created, and the logs the fake `gh` and the `bun` wrapper write. They do not parse shell or read the session's intent, so some things stay out of their sight:
+
+- **Run file content in shell writes.** A Write or Edit is checked on the content it writes. A shell command is checked over its whole text, so a heredoc or inline JSON counts as written, and content placed elsewhere in the same command (a comment, a second command) is not told apart from it. A shell write also counts only when it names the run file by a literal path under `~`, `$HOME` or the run's home. The real runs write the file with a heredoc or a Write.
+- **The run file itself.** The sandbox refuses every write under `~/.claude`, so no run file ever lands and no grader reads one. The grader reads the call that tried to write it.
+- **Whether the skill fired.** The prompts start with `/ship-it:land`, which loads the skill without a Skill tool call, so the graders read what the session did, not that land was loaded.
+- **The gate case has no PR.** It checks the workspace, the `gh` log and the reply, and an `llm` grader reads the reply. That judge, and the one on the evidence chain's final message, can vote differently from run to run.
+- **Commands run from a subdirectory.** `.fake-bin` is a relative PATH entry, so `gh`, `git` and `bun test` started outside the repository root reach the real tools. The real `gh` has no login and no network there, so the call fails without a log line, and a test run from there is not logged.
+- **What the fake GitHub serves.** One required check that passes on every commit, no review labels, no manual gates and no failing CI, so the review rounds, CI fixes and gate questions of land are not exercised.
+- **The PDF scope check reads words.** It counts lines that name PDF outside the tests. A PDF change that never names PDF would pass it, and a test that expects PDF to work fails the PR's own test run instead.
+- **macOS only so far.** Every run so far was on macOS with Claude Code 2.1.316. The Linux sandbox (`bubblewrap`) is untested.
