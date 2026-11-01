@@ -13,6 +13,11 @@
 #   holds is set here.
 set -euo pipefail
 
+# The operator's global and system git config never reach the fixture: a
+# template directory with hooks, a default branch, signing or line-ending
+# settings there would change main's SHA or refuse the push.
+export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+
 case ":$PATH:" in
   *":.fake-bin:"*) ;;
   *)
@@ -83,7 +88,7 @@ sed -i.template \
 rm .fake-bin/bun.template
 chmod +x .fake-bin/git .fake-bin/gh .fake-bin/bun
 
-git init -q --bare "$remote"
+git init -q --bare -b main "$remote"
 mkdir -p "$remote/.fake-bin"
 cp .fake-bin/git "$remote/.fake-bin/git"
 

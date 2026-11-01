@@ -400,6 +400,38 @@ describe("the land eval workspace", () => {
     expect(remoteMainMatchesGrader()).toBe(true);
   });
 
+  test("pushes the same main under a global config with a hook template", () => {
+    const configDirectory = mkdtempSync(
+      join(tmpdir(), "ship-it-git-template-"),
+    );
+    const hooks = join(configDirectory, "template", "hooks");
+    const globalConfig = join(configDirectory, "gitconfig");
+
+    mkdirSync(hooks, { recursive: true });
+    writeFileSync(join(hooks, "pre-receive"), "#!/bin/sh\nexit 1\n");
+    chmodSync(join(hooks, "pre-receive"), 0o755);
+    writeFileSync(
+      globalConfig,
+      `[init]\n\ttemplateDir = ${join(configDirectory, "template")}\n\tdefaultBranch = trunk\n[commit]\n\tgpgSign = true\n[gpg]\n\tprogram = false\n`,
+    );
+
+    const result = spawnSync("bash", [setupScript], {
+      cwd: workspace,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        PATH: `.fake-bin:${process.env.PATH}`,
+        GIT_CONFIG_GLOBAL: globalConfig,
+      },
+    });
+
+    rmSync(configDirectory, { recursive: true, force: true });
+
+    expect(result.stderr).toBe("");
+    expect(result.status).toBe(0);
+    expect(remoteMainMatchesGrader()).toBe(true);
+  });
+
   test("pushes the same main under a git config that signs and hooks commits", () => {
     const configDirectory = mkdtempSync(join(tmpdir(), "ship-it-git-config-"));
     const hooks = join(configDirectory, "hooks");
