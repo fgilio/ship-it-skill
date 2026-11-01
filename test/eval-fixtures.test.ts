@@ -280,10 +280,21 @@ describe("the land eval workspace", () => {
     run("bun", ["run", "test"]);
 
     const head = run("git", ["rev-parse", "HEAD"]).stdout;
+    const changedTree = () => {
+      run("git", ["add", "README.md"]);
+
+      return run("git", ["write-tree"]).stdout;
+    };
 
     expect(events().filter(({ event }) => event === "bun.test")).toEqual([
-      { event: "bun.test", exit: 0, head, dirty: false },
-      { event: "bun.test", exit: 0, head, dirty: true },
+      {
+        event: "bun.test",
+        exit: 0,
+        head,
+        dirty: false,
+        tree: run("git", ["rev-parse", "HEAD^{tree}"]).stdout,
+      },
+      { event: "bun.test", exit: 0, head, dirty: true, tree: changedTree() },
     ]);
   });
 
@@ -304,7 +315,11 @@ describe("the land eval workspace", () => {
     const head = run("git", ["rev-parse", "HEAD"]).stdout;
 
     expect(events()).toContainEqual(
-      expect.objectContaining({ event: "pr.create", pdfLines: 1 }),
+      expect.objectContaining({
+        event: "pr.create",
+        pdfLines: 1,
+        headTree: run("git", ["rev-parse", "HEAD^{tree}"]).stdout,
+      }),
     );
     expect(
       events()

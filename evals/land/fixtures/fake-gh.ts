@@ -148,6 +148,10 @@ function headSha(branch: string): string {
   );
 }
 
+function treeOf(commit: string): string {
+  return git(["--git-dir", state.remote, "rev-parse", `${commit}^{tree}`]);
+}
+
 function currentBranch(): string {
   return git(["branch", "--show-current"]);
 }
@@ -468,6 +472,7 @@ function openPull(
       base: pull.base,
       title: pull.title,
       headSha: headCommit,
+      headTree: treeOf(headCommit),
       commits,
       files: git(["--git-dir", state.remote, "diff", "--name-only", range])
         .split("\n")
@@ -517,6 +522,7 @@ function markReady(
       event: "pr.ready",
       number: pull.number,
       headSha: headSha(pull.head),
+      headTree: treeOf(headSha(pull.head)),
     },
     ...(body === undefined ? {} : { body }),
     ...(message === undefined ? {} : { text: message }),

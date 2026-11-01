@@ -48,13 +48,18 @@ printf '#!/bin/sh\nexec "%s" "$@"\n' "$git_binary" > .fake-bin/git
 cp "$fixtures/fake-gh.ts" .fake-bin/gh
 
 # Logs each `bun test` run to the gh call log, in order with the gh calls,
-# with its exit code, the commit it ran on and whether the work tree held
-# changes, so a grader can find a clean passing run on the PR's head.
+# with its exit code, the commit it ran on, whether the work tree held
+# changes, and the tree of the code it ran (the work tree as a commit of it
+# would hold it), so a grader can match a passing run to the PR's code.
 cat > .fake-bin/bun <<'EOF'
 #!/bin/sh
 if [ "$1" != test ]; then
   exec "@BUN@" "$@"
 fi
+index=$(mktemp)
+cp .git/index "$index" 2>/dev/null
+tree=$(GIT_INDEX_FILE="$index" "@GIT@" add -A 2>/dev/null && GIT_INDEX_FILE="$index" "@GIT@" write-tree 2>/dev/null)
+rm -f "$index"
 "@BUN@" "$@"
 status=$?
 head=$("@GIT@" rev-parse HEAD 2>/dev/null)
@@ -62,7 +67,7 @@ dirty=false
 if [ -n "$("@GIT@" status --porcelain 2>/dev/null)" ]; then
   dirty=true
 fi
-printf '{"event":"bun.test","exit":%d,"head":"%s","dirty":%s}\n' "$status" "$head" "$dirty" >> "@LOG@"
+printf '{"event":"bun.test","exit":%d,"head":"%s","dirty":%s,"tree":"%s"}\n' "$status" "$head" "$dirty" "$tree" >> "@LOG@"
 exit "$status"
 EOF
 sed -i.template \
