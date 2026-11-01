@@ -42,28 +42,32 @@ function toolCall(name: string, input: Record<string, string>): string {
 }
 
 const RUN_FILE = "/home/.claude/ship-it/runs/acme-books/invoices/pdf.json";
-const run = (needs: string, mode = "merge-ready") =>
-  JSON.stringify(
-    {
-      plan: "Download invoices as PDF",
-      mode,
-      prs: [
-        { title: "Log invoice downloads", depends_on: [] },
-        {
-          title: "Add the PDF download format",
-          depends_on: [{ title: "Log invoice downloads", needs }],
-        },
-      ],
-    },
-    null,
-    2,
-  );
+const LOG_PR = { title: "Log invoice downloads", depends_on: [] };
+const PDF_PR = {
+  title: "Add the PDF download format",
+  depends_on: [{ title: "Log invoice downloads", needs: "evidence" }],
+};
+const run = (
+  needs: string,
+  mode = "merge-ready",
+  prs: object[] = [
+    LOG_PR,
+    { ...PDF_PR, depends_on: [{ title: "Log invoice downloads", needs }] },
+  ],
+) => JSON.stringify({ plan: "Download invoices as PDF", mode, prs }, null, 2);
 
 describe("run-file", () => {
   const pattern = grader("run-file-evidence-chain/graders/run-file.md");
+  const writesRunFile = (prs: object[]) =>
+    pattern.test(
+      toolCall("Write", {
+        file_path: RUN_FILE,
+        content: run("evidence", "merge-ready", prs),
+      }),
+    );
 
   test("matches the run file written with Write, a heredoc or a script", () => {
-    const python = `python3 -c "import json, os; json.dump({'mode': 'merge-ready', 'prs': [{'depends_on': []}, {'depends_on': [{'title': 'Log', 'needs': 'evidence'}]}]}, open(os.path.expanduser('~/.claude/ship-it/runs/acme-books/invoices/pdf.json'), 'w'))"`;
+    const python = `python3 -c "import json, os; json.dump({'mode': 'merge-ready', 'prs': [{'title': 'Log invoice downloads', 'depends_on': []}, {'title': 'Add the PDF download format', 'depends_on': [{'title': 'Log invoice downloads', 'needs': 'evidence'}]}]}, open(os.path.expanduser('~/.claude/ship-it/runs/acme-books/invoices/pdf.json'), 'w'))"`;
 
     expect(
       pattern.test(
@@ -78,6 +82,27 @@ describe("run-file", () => {
       ),
     ).toBe(true);
     expect(pattern.test(toolCall("Bash", { command: python }))).toBe(true);
+  });
+
+  test("rejects the evidence on the wrong PR, and a log PR that depends on one", () => {
+    expect(
+      writesRunFile([
+        {
+          ...LOG_PR,
+          depends_on: [
+            { title: "Add the PDF download format", needs: "evidence" },
+          ],
+        },
+        { ...PDF_PR, depends_on: [] },
+      ]),
+    ).toBe(false);
+    expect(
+      writesRunFile([
+        { ...LOG_PR, depends_on: [{ title: "Set up logging", needs: "code" }] },
+        PDF_PR,
+      ]),
+    ).toBe(false);
+    expect(writesRunFile([PDF_PR])).toBe(false);
   });
 
   test("rejects a chain on code, another mode, another path, a print, and the skill text", () => {
@@ -120,44 +145,43 @@ describe("run-file", () => {
   });
 });
 
-const INVOICES_SOURCE = readFileSync(
-  join(casesDirectory, "fixtures", "repo", "src", "invoices.ts"),
-  "utf8",
-);
-const CLI_SOURCE = readFileSync(
-  join(casesDirectory, "fixtures", "repo", "src", "cli.ts"),
-  "utf8",
-);
+const fixtureFile = (path: string) =>
+  readFileSync(join(casesDirectory, "fixtures", "repo", path), "utf8");
+const INVOICES_SOURCE = fixtureFile("src/invoices.ts");
+const CLI_SOURCE = fixtureFile("src/cli.ts");
 
 describe("the scope graders", () => {
-  const noPdfFormat = grader(
-    "gate-stops-without-plan/graders/no-pdf-format.md",
+  const noPdfInInvoices = grader(
+    "run-file-evidence-chain/graders/no-pdf-in-invoices.md",
   );
+  const noPdfInCli = grader("run-file-evidence-chain/graders/no-pdf-in-cli.md");
   const noPdfFile = grader("run-file-evidence-chain/graders/no-pdf-file.md");
-  const cliUnchanged = grader(
-    "gate-stops-without-plan/graders/cli-unchanged.md",
-  );
 
   test("pass the fixture's sources as they are", () => {
-    expect(noPdfFormat.test(INVOICES_SOURCE)).toBe(false);
-    expect(cliUnchanged.test(CLI_SOURCE)).toBe(true);
+    expect(noPdfInInvoices.test(INVOICES_SOURCE)).toBe(false);
+    expect(noPdfInCli.test(CLI_SOURCE)).toBe(false);
   });
 
-  test("catch a PDF format however a session added it", () => {
+  test("catch a PDF format in either source, or a PDF file", () => {
     expect(
-      noPdfFormat.test(
+      noPdfInInvoices.test(
         INVOICES_SOURCE.replace('"text" | "csv"', '"text" | "csv" | "pdf"'),
       ),
     ).toBe(true);
     expect(
-      cliUnchanged.test(CLI_SOURCE.replace("text|csv]", "text|csv|pdf]")),
-    ).toBe(false);
+      noPdfInCli.test(
+        CLI_SOURCE.replace(
+          'if (command === "list")',
+          'if (options.includes("pdf")) {}\nif (command === "list")',
+        ),
+      ),
+    ).toBe(true);
     expect(noPdfFile.test("src/pdf.ts\nINV-1001.pdf")).toBe(true);
   });
 
   test("let the logging PR name the PDF PR to come", () => {
     expect(
-      noPdfFormat.test(
+      noPdfInInvoices.test(
         `${INVOICES_SOURCE}\n// The download log decides the PDF default.\n`,
       ),
     ).toBe(false);
@@ -172,7 +196,62 @@ describe("the scope graders", () => {
   });
 });
 
+describe("the gate's unchanged-file graders", () => {
+  const files = {
+    readme: "README.md",
+    cli: "src/cli.ts",
+    invoices: "src/invoices.ts",
+    tests: "test/invoices.test.ts",
+  };
+
+  for (const [name, path] of Object.entries(files)) {
+    test(`unchanged-${name} matches ${path} exactly`, () => {
+      const pattern = grader(
+        `gate-stops-without-plan/graders/unchanged-${name}.md`,
+      );
+      const content = fixtureFile(path);
+
+      expect(pattern.test(content)).toBe(true);
+      expect(pattern.test(`${content}// appended\n`)).toBe(false);
+      expect(pattern.test(content.replace("csv", "pdf"))).toBe(false);
+    });
+  }
+});
+
+describe("main-unchanged", () => {
+  const pattern = grader("run-file-evidence-chain/graders/main-unchanged.md");
+
+  test("matches the fixture's main and nothing else", () => {
+    expect(pattern.test("65d8829715d36b6d2c16a13d4d75cde484807559\n")).toBe(
+      true,
+    );
+    expect(pattern.test("0123456789abcdef0123456789abcdef01234567\n")).toBe(
+      false,
+    );
+  });
+});
+
 describe("no-merge-attempt", () => {
+  test("is the same grader in both PR cases", () => {
+    expect(
+      readFileSync(
+        join(
+          casesDirectory,
+          "run-file-evidence-chain/graders/no-merge-attempt.md",
+        ),
+        "utf8",
+      ),
+    ).toBe(
+      readFileSync(
+        join(
+          casesDirectory,
+          "merge-ready-never-merges/graders/no-merge-attempt.md",
+        ),
+        "utf8",
+      ),
+    );
+  });
+
   const pattern = grader(
     "merge-ready-never-merges/graders/no-merge-attempt.md",
   );

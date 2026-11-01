@@ -22,10 +22,10 @@ const setupScript = join(
   "setup.sh",
 );
 const scriptsDirectory = join(repositoryDirectory, "scripts");
-
-// Fixed commit dates in the setup script make main's SHA the same in every
-// run. The evidence-chain case's remote-main grader names it.
-const FIXTURE_MAIN = "65d8829715d36b6d2c16a13d4d75cde484807559";
+const mainUnchangedGrader = join(
+  repositoryDirectory,
+  "evals/land/run-file-evidence-chain/graders/main-unchanged.md",
+);
 
 let workspace: string;
 
@@ -202,10 +202,33 @@ describe("the land eval workspace", () => {
     ).toEqual(["auto", "api", "graphql"]);
   });
 
-  test("pushes the same main in every workspace", () => {
+  test("pushes the main the remote-main grader names", () => {
     run("bash", [setupScript]);
 
-    expect(run("git", ["rev-parse", "origin/main"]).stdout).toBe(FIXTURE_MAIN);
+    const [, frontMatter = ""] = readFileSync(
+      mainUnchangedGrader,
+      "utf8",
+    ).split("---");
+    const config: unknown = Bun.YAML.parse(frontMatter);
+    const pattern =
+      typeof config === "object" &&
+      config !== null &&
+      "pattern" in config &&
+      typeof config.pattern === "string"
+        ? new RegExp(config.pattern)
+        : null;
+
+    expect(
+      pattern?.test(
+        readFileSync(
+          join(
+            workspace,
+            ".git/fake-remote/acme-books/invoices.git/refs/heads/main",
+          ),
+          "utf8",
+        ),
+      ),
+    ).toBe(true);
   });
 
   test("ends a call it cannot lock, instead of waiting for the lock", () => {
