@@ -2,9 +2,8 @@
 type: regex
 target:
   source: file
-  path: .fake-bin/bun-calls.jsonl
-flags: m
-pattern: "^(?=[^\\n]*\"command\":\"test\")(?=[^\\n]*\"exit\":0,)(?![^\\n]*\"head\":\"65d8829715d36b6d2c16a13d4d75cde484807559\",\"dirty\":false)"
+  path: .fake-bin/gh-calls.jsonl
+pattern: "\"event\":\"(?:pr\\.create|pr\\.ready)\"[^\\n]*?\"headSha\":\"([0-9a-f]{40})\"[\\s\\S]*\"event\":\"bun\\.test\",\"exit\":0,\"head\":\"\\1\",\"dirty\":false|\"event\":\"bun\\.test\",\"exit\":0,\"head\":\"([0-9a-f]{40})\",\"dirty\":false[\\s\\S]*\"event\":\"(?:pr\\.create|pr\\.ready)\"[^\\n]*?\"headSha\":\"\\2\""
 ---
 
-`bun test` passed after the change: the bun wrapper logged a run from the repository root that exited 0 on a commit other than the fixture's `main`, or with changes in the work tree.
+`bun test` passed on the PR's code: the log holds a run from the repository root that exited 0 with a clean work tree on the commit the fake gh logged as the PR's head, at `pr create` or at `pr ready`, before or after it.
