@@ -84,6 +84,27 @@ describe("run-file", () => {
     expect(pattern.test(toolCall("Bash", { command: python }))).toBe(true);
   });
 
+  test("reads each PR in any key order", () => {
+    expect(
+      writesRunFile([
+        { depends_on: [], branch: "invoice-download-log", title: LOG_PR.title },
+        {
+          step: "waiting",
+          depends_on: [{ needs: "evidence", title: "Log invoice downloads" }],
+          branch: "invoice-pdf",
+          title: PDF_PR.title,
+        },
+      ]),
+    ).toBe(true);
+    expect(
+      pattern.test(
+        toolCall("Bash", {
+          command: `python3 -c "import json, os; json.dump({'mode': 'merge-ready', 'prs': [{'depends_on': [], 'title': 'Log invoice downloads'}, {'depends_on': [{'needs': 'evidence', 'title': 'Log invoice downloads'}], 'title': 'Add the PDF download format'}]}, open(os.path.expanduser('~/.claude/ship-it/runs/acme-books/invoices/pdf.json'), 'w'))"`,
+        }),
+      ),
+    ).toBe(true);
+  });
+
   test("rejects the evidence on the wrong PR, and a log PR that depends on one", () => {
     expect(
       writesRunFile([
