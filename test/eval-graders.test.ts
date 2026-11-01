@@ -69,6 +69,14 @@ describe("run-file", () => {
   const pattern = {
     test: (trace: string) => runFile.test(`${SESSION_START}\n${trace}`),
   };
+  const editsRunFile = (oldString: string, newString: string) =>
+    pattern.test(
+      toolCall("Edit", {
+        file_path: RUN_FILE,
+        old_string: oldString,
+        new_string: newString,
+      }),
+    );
   const writesRunFile = (prs: object[]) =>
     pattern.test(
       toolCall("Write", {
@@ -129,6 +137,11 @@ describe("run-file", () => {
         toolCall("Write", { file_path: RUN_FILE, content: run("evidence") }),
       ),
     ).toBe(false);
+  });
+
+  test("reads what an Edit writes, never what it replaces", () => {
+    expect(editsRunFile(run("evidence"), run("code"))).toBe(false);
+    expect(editsRunFile(run("code"), run("evidence"))).toBe(true);
   });
 
   test("rejects a write to another file that names the run file", () => {
