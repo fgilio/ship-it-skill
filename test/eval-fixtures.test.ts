@@ -3,7 +3,13 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -16,6 +22,10 @@ const setupScript = join(
   "setup.sh",
 );
 const scriptsDirectory = join(repositoryDirectory, "scripts");
+
+// Fixed commit dates in the setup script make main's SHA the same in every
+// run. The evidence-chain case's remote-main grader names it.
+const FIXTURE_MAIN = "65d8829715d36b6d2c16a13d4d75cde484807559";
 
 let workspace: string;
 
@@ -190,6 +200,30 @@ describe("the land eval workspace", () => {
         .filter(({ event }) => event === "pr.merge")
         .map(({ how }) => how),
     ).toEqual(["auto", "api", "graphql"]);
+  });
+
+  test("pushes the same main in every workspace", () => {
+    run("bash", [setupScript]);
+
+    expect(run("git", ["rev-parse", "origin/main"]).stdout).toBe(FIXTURE_MAIN);
+  });
+
+  test("ends a call it cannot lock, instead of waiting for the lock", () => {
+    run("bash", [setupScript]);
+    chmodSync(join(workspace, ".fake-bin"), 0o555);
+
+    const result = spawnSync("gh", ["api", "user"], {
+      cwd: workspace,
+      encoding: "utf8",
+      env: { ...process.env, PATH: `.fake-bin:${process.env.PATH}` },
+      timeout: 5000,
+    });
+
+    chmodSync(join(workspace, ".fake-bin"), 0o755);
+
+    expect(result.signal).toBeNull();
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("EACCES");
   });
 
   test("refuses a call it does not know, and logs it", () => {

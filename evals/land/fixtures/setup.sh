@@ -49,10 +49,14 @@ git config remote.origin.receivepack "$(git --exec-path)/git-receive-pack"
 git config remote.origin.uploadpack "$(git --exec-path)/git-upload-pack"
 git config push.default current
 
+# Fixed dates make the fixture's commits, and so main's SHA, the same in
+# every run, so a grader can tell whether main moved.
+export GIT_AUTHOR_DATE="2026-10-20T09:00:00Z" GIT_COMMITTER_DATE="2026-10-20T09:00:00Z"
 git add package.json README.md .github src/invoices.ts test
 git commit -q -m "Look up invoices and their totals"
 git add src/cli.ts
-git commit -q -m "Download an invoice as text or csv from the command line"
+GIT_AUTHOR_DATE="2026-10-21T09:00:00Z" GIT_COMMITTER_DATE="2026-10-21T09:00:00Z" \
+  git commit -q -m "Download an invoice as text or csv from the command line"
 git push -q origin main
 git remote set-head origin main
 

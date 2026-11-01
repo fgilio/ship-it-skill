@@ -66,15 +66,29 @@ const args = process.argv.slice(2);
 /**
  * Holds the state for this call alone. A session can run gh calls side by
  * side, and each one reads, changes and saves the whole state. A lock left
- * by a call that died is taken over after ten seconds.
+ * by a call that died is taken over after ten seconds. Any other failure
+ * to take it (no directory, no permission) ends the call.
  */
+function hasErrorCode(error: unknown, code: string): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === code
+  );
+}
+
 function lockState(): void {
   for (;;) {
     try {
       mkdirSync(lockPath);
 
       return;
-    } catch {
+    } catch (error) {
+      if (!hasErrorCode(error, "EEXIST")) {
+        throw error;
+      }
+
       const age =
         Date.now() -
         (statSync(lockPath, { throwIfNoEntry: false })?.mtimeMs ?? Date.now());
