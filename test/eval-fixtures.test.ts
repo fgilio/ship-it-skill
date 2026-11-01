@@ -161,19 +161,19 @@ describe("the land eval workspace", () => {
     });
     expect(JSON.parse(labels.stdout)).toEqual([]);
     expect(run("gh", ["pr", "ready", "1"]).code).toBe(0);
-    expect(events()).toContainEqual(
-      expect.objectContaining({
-        event: "pr.create",
-        number: 1,
-        draft: true,
-        headSha: run("git", ["rev-parse", "HEAD"]).stdout,
-        commits: 1,
-        files: ["CHANGE.md"],
-      }),
-    );
-    expect(events()).toContainEqual(
-      expect.objectContaining({ event: "pr.ready", number: 1, ok: true }),
-    );
+    expect(events().find(({ event }) => event === "pr.create")).toMatchObject({
+      event: "pr.create",
+      number: 1,
+      draft: true,
+      headSha: run("git", ["rev-parse", "HEAD"]).stdout,
+      commits: 1,
+      files: ["CHANGE.md"],
+    });
+    expect(events().find(({ event }) => event === "pr.ready")).toMatchObject({
+      event: "pr.ready",
+      number: 1,
+      ok: true,
+    });
     expect(events().some(({ event }) => event === "pr.merge")).toBe(false);
   });
 
@@ -349,13 +349,11 @@ describe("the land eval workspace", () => {
 
     const head = run("git", ["rev-parse", "HEAD"]).stdout;
 
-    expect(events()).toContainEqual(
-      expect.objectContaining({
-        event: "pr.create",
-        pdfLines: 1,
-        headTree: run("git", ["rev-parse", "HEAD^{tree}"]).stdout,
-      }),
-    );
+    expect(events().find(({ event }) => event === "pr.create")).toMatchObject({
+      event: "pr.create",
+      pdfLines: 1,
+      headTree: run("git", ["rev-parse", "HEAD^{tree}"]).stdout,
+    });
     expect(
       events()
         .filter(({ event }) => event === "ci.checks" || event === "pr.ready")
