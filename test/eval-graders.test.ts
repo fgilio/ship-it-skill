@@ -2,8 +2,8 @@
 // each must match the behavior it names and nothing near it.
 
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { readdirSync, readFileSync } from "node:fs";
+import { join, relative } from "node:path";
 
 const casesDirectory = join(import.meta.dir, "..", "evals", "land");
 
@@ -197,23 +197,47 @@ describe("the scope graders", () => {
 });
 
 describe("the gate's unchanged-file graders", () => {
-  const files = {
-    readme: "README.md",
-    cli: "src/cli.ts",
-    invoices: "src/invoices.ts",
-    tests: "test/invoices.test.ts",
-  };
+  const gradersDirectory = join(
+    casesDirectory,
+    "gate-stops-without-plan",
+    "graders",
+  );
+  const fixtureFiles = readdirSync(join(casesDirectory, "fixtures", "repo"), {
+    recursive: true,
+    withFileTypes: true,
+  })
+    .filter((entry) => entry.isFile())
+    .map((entry) =>
+      relative(
+        join(casesDirectory, "fixtures", "repo"),
+        join(entry.parentPath, entry.name),
+      ),
+    )
+    .toSorted();
+  const gradedFiles = new Map(
+    readdirSync(gradersDirectory)
+      .filter((name) => name.startsWith("unchanged-"))
+      .map((name) => {
+        const path = readFileSync(join(gradersDirectory, name), "utf8").match(
+          /^ {2}path: (.+)$/m,
+        )?.[1];
 
-  for (const [name, path] of Object.entries(files)) {
-    test(`unchanged-${name} matches ${path} exactly`, () => {
-      const pattern = grader(
-        `gate-stops-without-plan/graders/unchanged-${name}.md`,
-      );
+        return [path ?? name, `gate-stops-without-plan/graders/${name}`];
+      }),
+  );
+
+  test("cover every file the fixture repository holds", () => {
+    expect([...gradedFiles.keys()].toSorted()).toEqual(fixtureFiles);
+  });
+
+  for (const path of fixtureFiles) {
+    test(`match ${path} exactly, and nothing changed`, () => {
+      const pattern = grader(gradedFiles.get(path) ?? path);
       const content = fixtureFile(path);
 
       expect(pattern.test(content)).toBe(true);
-      expect(pattern.test(`${content}// appended\n`)).toBe(false);
-      expect(pattern.test(content.replace("csv", "pdf"))).toBe(false);
+      expect(pattern.test(`${content}appended\n`)).toBe(false);
+      expect(pattern.test(content.slice(1))).toBe(false);
     });
   }
 });
