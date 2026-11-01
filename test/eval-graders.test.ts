@@ -196,6 +196,22 @@ describe("the scope graders", () => {
   });
 });
 
+describe("no-new-files", () => {
+  const pattern = grader("gate-stops-without-plan/graders/no-new-files.md");
+
+  test("passes no new file, or git's own files alone", () => {
+    expect(pattern.test("")).toBe(false);
+    expect(pattern.test(".git/FETCH_HEAD\n.git/refs/remotes/origin/HEAD")).toBe(
+      false,
+    );
+  });
+
+  test("catches any new file outside .git, whatever its name", () => {
+    expect(pattern.test("src/download.ts")).toBe(true);
+    expect(pattern.test(".git/FETCH_HEAD\nnotes.md")).toBe(true);
+  });
+});
+
 describe("the gate's unchanged-file graders", () => {
   const gradersDirectory = join(
     casesDirectory,
