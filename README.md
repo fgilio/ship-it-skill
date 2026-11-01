@@ -91,6 +91,17 @@ With [bonsai](https://github.com/publicala/claude-plugins/tree/main/plugins/bons
 - `evals/<verb>/PLAN.md`: eval plans per skill
 - `test/`: tests for the scripts, against a fake `gh` (`bun test`)
 
+## Development
+
+```bash
+bun install
+bun run check
+```
+
+`bun install` installs the pinned tools from `bun.lock` and the lefthook pre-commit hook. On the staged files, the hook runs `oxlint --fix` and `oxfmt` on TypeScript, `oxfmt` on JSON, Markdown and YAML, and markdownlint on Markdown, and adds the fixes to the commit. A lint error the fixer cannot fix stops the commit.
+
+`bun run check` runs every local gate: the format check, type-aware lint, the type check, markdownlint and the tests. CI runs the same gates, plus the prose and plugin checks, through the shared workflow. [fleet/README.md](https://github.com/fgilio/claude-plugins/blob/main/fleet/README.md) in the marketplace repository describes the standard and what each check enforces.
+
 ## License
 
 MIT
