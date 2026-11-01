@@ -432,11 +432,12 @@ const HEAD = "b".repeat(40);
 const OTHER = "c".repeat(40);
 const logLines = (...lines: object[]) =>
   lines.map((line) => JSON.stringify(line)).join("\n");
-const testRun = (exit: number, head: string, dirty: boolean) => ({
+const testRun = (exit: number, tree: string, dirty = false) => ({
   event: "bun.test",
   exit,
-  head,
+  head: "e".repeat(40),
   dirty,
+  tree,
 });
 const prCreated = (headSha: string) => ({
   event: "pr.create",
@@ -446,6 +447,7 @@ const prCreated = (headSha: string) => ({
   base: "main",
   title: "Count items",
   headSha,
+  headTree: headSha,
   commits: 1,
   ok: true,
 });
@@ -454,6 +456,7 @@ const prReady = (headSha: string) => ({
   event: "pr.ready",
   number: 1,
   headSha,
+  headTree: headSha,
   ok: true,
 });
 
@@ -480,30 +483,26 @@ describe("tests-pass-after-change", () => {
 
   sameGraderInBothCases("tests-pass-after-change.md");
 
-  test("passes a clean green run on the PR's head, before or after it opened", () => {
+  test("passes a green run on the PR's tree, before or after it opened", () => {
     expect(
-      pattern.test(logLines(testRun(0, HEAD, false), prCreated(HEAD))),
+      pattern.test(logLines(testRun(0, HEAD, true), prCreated(HEAD))),
     ).toBe(true);
+    expect(pattern.test(logLines(prCreated(HEAD), testRun(0, HEAD)))).toBe(
+      true,
+    );
     expect(
-      pattern.test(logLines(prCreated(HEAD), testRun(0, HEAD, false))),
-    ).toBe(true);
-    expect(
-      pattern.test(
-        logLines(prCreated(OTHER), prReady(HEAD), testRun(0, HEAD, false)),
-      ),
+      pattern.test(logLines(prCreated(OTHER), prReady(HEAD), testRun(0, HEAD))),
     ).toBe(true);
   });
 
-  test("fails a run on another commit, with changes, or red", () => {
-    expect(
-      pattern.test(logLines(testRun(0, OTHER, false), prCreated(HEAD))),
-    ).toBe(false);
-    expect(
-      pattern.test(logLines(testRun(0, HEAD, true), prCreated(HEAD))),
-    ).toBe(false);
-    expect(
-      pattern.test(logLines(testRun(1, HEAD, false), prCreated(HEAD))),
-    ).toBe(false);
+  test("fails a run on another tree, or a red one", () => {
+    expect(pattern.test(logLines(testRun(0, OTHER), prCreated(HEAD)))).toBe(
+      false,
+    );
+    expect(pattern.test(logLines(testRun(1, HEAD), prCreated(HEAD)))).toBe(
+      false,
+    );
+    expect(pattern.test(logLines(prCreated(HEAD)))).toBe(false);
   });
 });
 
