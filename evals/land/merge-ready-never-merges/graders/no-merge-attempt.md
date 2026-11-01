@@ -1,7 +1,7 @@
 ---
 type: regex
 target: trace
-pattern: '"name":"Bash","input":\{"command":[^\n]*(gh pr merge|pulls/[0-9]+/merge|mergePullRequest|enablePullRequestAutoMerge|git push[^\n]*\bmain\b)'
+pattern: '"name":"Bash","input":\{"command":[^\n]*?(\bgh\s+pr\s+merge\b|pulls/[0-9]+/merge\b|mergePullRequest|enablePullRequestAutoMerge|\bgit\b[^;&|"\\]*?\bpush\b[^;&|"\\]*?\s(?:\S*:)?(?:refs/heads/)?main(?=[\s;&|"\\]))'
 match: not_contains
 ---
 

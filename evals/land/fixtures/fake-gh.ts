@@ -10,7 +10,14 @@
 // label.add, comment, read, unknown), its details, and the raw `args`.
 
 import { spawnSync } from "node:child_process";
-import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 
 interface FakePullRequest {
@@ -53,7 +60,33 @@ const NO_SHA = "0".repeat(40);
 const directory = import.meta.dir;
 const statePath = join(directory, "state.json");
 const logPath = join(directory, "gh-calls.jsonl");
+const lockPath = join(directory, "state.lock");
 const args = process.argv.slice(2);
+
+/**
+ * Holds the state for this call alone. A session can run gh calls side by
+ * side, and each one reads, changes and saves the whole state. A lock left
+ * by a call that died is taken over after ten seconds.
+ */
+function lockState(): void {
+  for (;;) {
+    try {
+      mkdirSync(lockPath);
+
+      return;
+    } catch {
+      const age =
+        Date.now() -
+        (statSync(lockPath, { throwIfNoEntry: false })?.mtimeMs ?? Date.now());
+
+      if (age > 10_000) {
+        rmSync(lockPath, { recursive: true, force: true });
+      }
+
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
+    }
+  }
+}
 
 function isFakeState(value: unknown): value is FakeState {
   return (
@@ -68,7 +101,10 @@ function isFakeState(value: unknown): value is FakeState {
   );
 }
 
-const parsedState: unknown = JSON.parse(readFileSync(statePath, "utf8"));
+lockState();
+
+const savedState = readFileSync(statePath, "utf8");
+const parsedState: unknown = JSON.parse(savedState);
 
 if (!isFakeState(parsedState)) {
   throw new Error(`The fake gh state in ${statePath} is not a FakeState.`);
@@ -860,5 +896,12 @@ appendFileSync(
   logPath,
   `${JSON.stringify({ ...result.event, ok: result.error === undefined, args })}\n`,
 );
-writeFileSync(statePath, JSON.stringify(state, null, 2));
+
+const changedState = JSON.stringify(state, null, 2);
+
+if (changedState !== savedState) {
+  writeFileSync(statePath, changedState);
+}
+
+rmSync(lockPath, { recursive: true, force: true });
 print(result);

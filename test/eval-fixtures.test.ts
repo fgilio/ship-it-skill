@@ -133,6 +133,37 @@ describe("the land eval workspace", () => {
     expect(events().some(({ event }) => event === "pr.merge")).toBe(false);
   });
 
+  test("keeps every change when calls overlap", async () => {
+    run("bash", [setupScript]);
+    pushBranch("invoice-download-log");
+    run("gh", ["pr", "create", "--draft", "--title", "Log", "--body", "x"]);
+
+    const calls = [
+      ["pr", "ready", "1"],
+      ...Array.from({ length: 8 }, () => [
+        "pr",
+        "view",
+        "1",
+        "--json",
+        "isDraft",
+      ]),
+    ].map(
+      (args) =>
+        Bun.spawn(["gh", ...args], {
+          cwd: workspace,
+          env: { ...process.env, PATH: `.fake-bin:${process.env.PATH}` },
+          stdout: "ignore",
+        }).exited,
+    );
+
+    await Promise.all(calls);
+
+    expect(
+      run("gh", ["pr", "view", "1", "--json", "isDraft", "--jq", ".isDraft"])
+        .stdout,
+    ).toBe("false");
+  });
+
   test("logs every way to merge as a merge", () => {
     run("bash", [setupScript]);
     pushBranch("invoice-item-count");
