@@ -4,9 +4,9 @@ Watch the checks of the pushed commit until they end, with the watch script:
 
 ```bash
 # A PR's head
-${CLAUDE_SKILL_DIR}/../../scripts/ship-it-ci-watch.mjs <PR number or URL>
+bun ${CLAUDE_SKILL_DIR}/../../scripts/ship-it-ci-watch.ts <PR number or URL>
 # A commit without a PR (the default branch after a merge)
-${CLAUDE_SKILL_DIR}/../../scripts/ship-it-ci-watch.mjs <sha>
+bun ${CLAUDE_SKILL_DIR}/../../scripts/ship-it-ci-watch.ts <sha>
 # → {"result": "passed", "head": "<sha>", "required": [...], "failed": [...], "pending": [...], "gates": [...]}
 ```
 

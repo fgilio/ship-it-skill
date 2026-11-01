@@ -24,11 +24,11 @@ Two scripts carry the protocol:
 
 ```bash
 # The tagged review labels, by focus
-${CLAUDE_SKILL_DIR}/../../scripts/ship-it-review-list.mjs
+bun ${CLAUDE_SKILL_DIR}/../../scripts/ship-it-review-list.ts
 # → [{"label": "<service>-review:<kind>", "service": "...", "kind": "...", "focus": "correctness"}, ...]
 
 # Ask for reviews on the PR head and wait for every answer
-${CLAUDE_SKILL_DIR}/../../scripts/ship-it-review-run.mjs <PR> <label>...
+bun ${CLAUDE_SKILL_DIR}/../../scripts/ship-it-review-run.ts <PR> <label>...
 # → {"head": "<sha>", "reviews": [{"label": "...", "status": "posted", "review_url": "...", ...}]}
 ```
 

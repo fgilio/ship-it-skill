@@ -50,7 +50,7 @@ The review skill works with any review service that follows one protocol, and na
 
 ## CI watch
 
-`scripts/ship-it-ci-watch.mjs` watches a PR's head, or a commit, through the REST API, and prints the outcome as JSON. For a PR it watches the checks the merge requires, read from the base branch's rulesets and branch protection, and every check but a review service's when the repository requires none. It waits up to five minutes for the first check or run to appear after a push, and fails when none does, then gives the checks two minutes to register while nothing runs.
+`scripts/ship-it-ci-watch.ts` watches a PR's head, or a commit, through the REST API, and prints the outcome as JSON. For a PR it watches the checks the merge requires, read from the base branch's rulesets and branch protection, and every check but a review service's when the repository requires none. It waits up to five minutes for the first check or run to appear after a push, and fails when none does, then gives the checks two minutes to register while nothing runs.
 
 A job that waits for an environment's approval is a manual gate. The watch lists each one and never waits for it unless the merge requires it, so a staging preview that nobody approved does not hold a PR. Approving a gate takes your permission: `/ship-it:deploy`'s invocation covers its deploy's gates, `--approve-gates` covers a run, and otherwise the first gate met raises one question for the whole invocation.
 
@@ -72,7 +72,7 @@ With [bonsai](https://github.com/publicala/claude-plugins/tree/main/plugins/bons
 ## Requirements
 
 - GitHub access as you, since review services refuse labels a bot adds: the GitHub CLI (`gh`) logged in, or the GitHub MCP server. `gh` comes first when both work. With MCP the agent makes each call and each check of a wait itself, so the same work takes more turns ([`references/github.md`](references/github.md)).
-- Node.js 22 or later, for the scripts.
+- [Bun](https://bun.sh) 1.4 or later, for the scripts.
 - The `code-review` skill that ships with Claude Code, for local reviews when `codex-partner` is missing.
 - Used when the session has them: `codex-partner` (local reviews by a second model), `pr-guidelines` (PR descriptions), `fgilio-voice` (replies), bonsai (guardrails), a Slack tool and a push notification tool (escalation).
 
@@ -89,8 +89,7 @@ With [bonsai](https://github.com/publicala/claude-plugins/tree/main/plugins/bons
 - `scripts/`: the scripts the skills run, and `skills/review/without-gh.md`: the review scripts' protocol by hand, for sessions without `gh`
 - `references/`: guidance the skills share: GitHub access through `gh` or MCP, commit and push, watching CI, proof, merge modes, escalation
 - `evals/<verb>/PLAN.md`: eval plans per skill
-- `test/`: tests for the scripts, against a fake `gh` (`node --test 'test/*.test.mjs'`)
-- `.oxlintrc.json`: the lint rules for the scripts and tests (`npx --yes oxlint@1.90.0 --deny-warnings .`)
+- `test/`: tests for the scripts, against a fake `gh` (`bun test`)
 
 ## License
 
