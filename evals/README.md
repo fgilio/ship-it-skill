@@ -4,7 +4,7 @@
 
 ## Run the suite
 
-From the repository root:
+Run it on your own machine, from your Claude Code login, before a change to the land skill merges, and merge only when every case passes. It never runs in CI, so it spends no API key. From the repository root:
 
 ```bash
 PATH=".fake-bin:$PATH" claude plugin eval . \
@@ -19,7 +19,7 @@ PATH=".fake-bin:$PATH" claude plugin eval . \
 
 Add `--case <name>` for one case and `--runs 1` for one run. Each case runs three times by default. Results go to `evals/results/<timestamp>/` (ignored by git): `aggregate-result.json` and `report.html`. `--keep-temp` keeps each run's workspace and its transcript (`out/trace.jsonl`) for debugging.
 
-Every run is a model session on your login, so it counts against your plan. A full run of the three cases, three runs each, took 17 minutes and cost $6.18 at list price on Claude Code 2.1.316: about $0.16 a run for the gate, and $0.55 to $1.15 for each case that takes a PR to merge-ready.
+Every run is a model session on your login, so it counts against your plan. On Claude Code 2.1.316, a full run of the three cases, three runs each, takes 17 to 25 minutes and costs $6 to $7 at list price: about $0.16 a run for the gate, and $0.55 to $1.70 for each case that takes a PR to merge-ready. The command exits 1 when any case scores below 1.0, which is the default threshold.
 
 ## The land cases
 
