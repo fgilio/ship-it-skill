@@ -21,6 +21,14 @@ Add `--case <name>` for one case and `--runs 1` for one run. Each case runs thre
 
 Every run is a model session on your login, so it counts against your plan. On Claude Code 2.1.316, a full run of the three cases, three runs each, takes 17 to 25 minutes and costs $6 to $7 at list price: about $0.16 a run for the gate, and $0.55 to $1.70 for each case that takes a PR to merge-ready. The command exits 1 when any case scores below 1.0, which is the default threshold.
 
+The latest run of each case on the current graders:
+
+| Case                       | Commit    | Runs passed | Score | Wall  | Cost  |
+| -------------------------- | --------- | ----------- | ----- | ----- | ----- |
+| `gate-stops-without-plan`  | `ef49cca` | 3 of 3      | 1.00  | 67 s  | $0.48 |
+| `merge-ready-never-merges` | `43dd151` | 3 of 3      | 1.00  | 407 s | $2.33 |
+| `run-file-evidence-chain`  | `afff461` | 3 of 3      | 1.00  | 978 s | $4.57 |
+
 ## The land cases
 
 Each case starts in the same workspace: the Acme Books invoices command line tool (`land/fixtures/repo/`) on `main`, with two commits whose SHA is the same in every run and on every machine (fixed dates and identities, and the scaffold ignores the operator's global and system git config entirely, so no template, hook, signing, default branch, line-ending setting or `GIT_AUTHOR_*` and `GIT_COMMITTER_*` value reaches it) pushed to a local copy of its GitHub remote, and a fake `gh` (`land/fixtures/fake-gh.ts`). The fake answers the calls the skills and their scripts make, for one repository whose pull requests the session opens. CI has one required check, `test`, that passes on every commit. The repository offers no review labels. Every call lands in `.fake-bin/gh-calls.jsonl`, one JSON line each, with the `event` the graders read (`pr.create`, `pr.ready`, `pr.merge`, ...). At `pr.create` it logs the head commit, the commits ahead of the base, the files the PR changes, and `pdfLines`, the number of lines the PR adds outside its tests that name the PDF format. It logs each check-runs read (the CI watch's query) as `ci.checks` with its commit, and the head commit at `pr.ready`. Like GitHub, it refuses a PR with nothing to merge and marking ready a PR that is not a draft, with an `UNSUPPORTED:` error. A `bun` wrapper adds a `bun.test` line to the same log for each `bun test` run from the repository root, with its exit code, the commit it ran on, whether the work tree held changes and the tree of the code it ran. The fake logs the PR head's tree at `pr.create` and `pr.ready`, so a grader can match a passing run to the PR's code whether the session committed before or after it.
