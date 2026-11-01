@@ -88,8 +88,12 @@ export function createSandbox(): Sandbox {
         let stdout = "";
         let stderr = "";
 
-        child.stdout.on("data", (chunk: Buffer) => (stdout += chunk));
-        child.stderr.on("data", (chunk: Buffer) => (stderr += chunk));
+        // Decode as UTF-8 in the stream, so a character split across two
+        // chunks still reads whole.
+        child.stdout.setEncoding("utf8");
+        child.stderr.setEncoding("utf8");
+        child.stdout.on("data", (chunk: string) => (stdout += chunk));
+        child.stderr.on("data", (chunk: string) => (stderr += chunk));
         child.on("close", (code) => resolve({ code, stdout, stderr }));
       });
     },
