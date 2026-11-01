@@ -19,7 +19,7 @@ PATH=".fake-bin:$PATH" claude plugin eval . \
 
 Add `--case <name>` for one case and `--runs 1` for one run. Each case runs three times by default. Results go to `evals/results/<timestamp>/` (ignored by git): `aggregate-result.json` and `report.html`. `--keep-temp` keeps each run's workspace and its transcript (`out/trace.jsonl`) for debugging.
 
-Every run is a model session on your login, so it counts against your plan. A full run of the three cases took about 22 minutes and cost about $8 at list price (see the PR that added the suite for the measured run).
+Every run is a model session on your login, so it counts against your plan. A full run of the three cases, three runs each, took 17 minutes and cost $6.18 at list price on Claude Code 2.1.316: about $0.16 a run for the gate, and $0.55 to $1.15 for each case that takes a PR to merge-ready.
 
 ## The land cases
 
