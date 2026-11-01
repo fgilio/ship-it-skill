@@ -221,6 +221,26 @@ describe("the gate's unchanged-file graders", () => {
 describe("main-unchanged", () => {
   const pattern = grader("run-file-evidence-chain/graders/main-unchanged.md");
 
+  test("is the same grader in both PR cases", () => {
+    expect(
+      readFileSync(
+        join(
+          casesDirectory,
+          "merge-ready-never-merges/graders/main-unchanged.md",
+        ),
+        "utf8",
+      ),
+    ).toBe(
+      readFileSync(
+        join(
+          casesDirectory,
+          "run-file-evidence-chain/graders/main-unchanged.md",
+        ),
+        "utf8",
+      ),
+    );
+  });
+
   test("matches the fixture's main and nothing else", () => {
     expect(pattern.test("65d8829715d36b6d2c16a13d4d75cde484807559\n")).toBe(
       true,
