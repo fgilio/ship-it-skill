@@ -162,7 +162,14 @@ describe("the land eval workspace", () => {
     expect(JSON.parse(labels.stdout)).toEqual([]);
     expect(run("gh", ["pr", "ready", "1"]).code).toBe(0);
     expect(events()).toContainEqual(
-      expect.objectContaining({ event: "pr.create", number: 1, draft: true }),
+      expect.objectContaining({
+        event: "pr.create",
+        number: 1,
+        draft: true,
+        headSha: run("git", ["rev-parse", "HEAD"]).stdout,
+        commits: 1,
+        files: ["CHANGE.md"],
+      }),
     );
     expect(events()).toContainEqual(
       expect.objectContaining({ event: "pr.ready", number: 1, ok: true }),
@@ -199,6 +206,92 @@ describe("the land eval workspace", () => {
       run("gh", ["pr", "view", "1", "--json", "isDraft", "--jq", ".isDraft"])
         .stdout,
     ).toBe("false");
+  });
+
+  test("refuses a pull request with nothing to merge", () => {
+    run("bash", [setupScript]);
+    run("git", ["push", "-q", "origin", "main:empty-branch"]);
+
+    const fromMain = run("gh", [
+      "pr",
+      "create",
+      "--title",
+      "t",
+      "--body",
+      "b",
+      "--head",
+      "main",
+    ]);
+    const fromEmpty = run("gh", [
+      "api",
+      "repos/{owner}/{repo}/pulls",
+      "-f",
+      "head=acme-books:empty-branch",
+      "-f",
+      "base=main",
+      "-f",
+      "title=t",
+    ]);
+    const unpushed = run("gh", [
+      "pr",
+      "create",
+      "--title",
+      "t",
+      "--body",
+      "b",
+      "--head",
+      "not-pushed",
+    ]);
+
+    expect([fromMain.code, fromEmpty.code, unpushed.code]).toEqual([1, 1, 1]);
+    expect(fromMain.stderr).toContain(
+      "UNSUPPORTED: main has no commits ahead of main",
+    );
+    expect(fromEmpty.stderr).toContain(
+      "UNSUPPORTED: empty-branch has no commits ahead of main",
+    );
+    expect(unpushed.stderr).toContain(
+      "UNSUPPORTED: the branch not-pushed is not on the remote",
+    );
+    expect(
+      events().filter(({ event }) => event === "pr.create.refused"),
+    ).toHaveLength(3);
+    expect(events().some(({ event }) => event === "pr.create")).toBe(false);
+  });
+
+  test("refuses to mark ready a pull request that is not a draft", () => {
+    run("bash", [setupScript]);
+    pushBranch("invoice-item-count");
+    run("gh", ["pr", "create", "--title", "Count items", "--body", "x"]);
+
+    const ready = run("gh", ["pr", "ready", "1"]);
+
+    expect(ready.code).toBe(1);
+    expect(ready.stderr).toContain(
+      "UNSUPPORTED: pull request acme-books/invoices#1 is not a draft",
+    );
+    expect(events().at(-1)).toMatchObject({ event: "pr.ready", ok: false });
+  });
+
+  test("logs each bun test run with its exit code, commit and changes", () => {
+    run("bash", [setupScript]);
+    run("bun", ["test"]);
+    writeFileSync(join(workspace, "README.md"), "Changed\n");
+    run("bun", ["run", "test"]);
+
+    const runs = readFileSync(
+      join(workspace, ".fake-bin", "bun-calls.jsonl"),
+      "utf8",
+    )
+      .trim()
+      .split("\n")
+      .map((line): unknown => JSON.parse(line));
+    const head = run("git", ["rev-parse", "HEAD"]).stdout;
+
+    expect(runs).toEqual([
+      { command: "test", exit: 0, head, dirty: false },
+      { command: "test", exit: 0, head, dirty: true },
+    ]);
   });
 
   test("logs every way to merge as a merge", () => {

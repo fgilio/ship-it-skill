@@ -8,6 +8,8 @@
 // (FakeState below). Each call appends one JSON line to `gh-calls.jsonl`:
 // the `event` the graders read (pr.create, pr.ready, pr.merge, pr.update,
 // label.add, comment, read, unknown), its details, and the raw `args`.
+// A call GitHub would refuse (an empty pull request, a ready one marked
+// ready) fails with `UNSUPPORTED:` and logs why.
 
 import { spawnSync } from "node:child_process";
 import {
@@ -382,34 +384,125 @@ function text(value: Json | undefined): string {
   return typeof value === "string" ? value : "";
 }
 
-function createPull(fields: {
+interface NewPull {
   title: string;
   body: string;
   head: string;
   base: string;
   draft: boolean;
-}): FakePullRequest {
+}
+
+/**
+ * Opens the pull request the way GitHub would, from the branches on the
+ * remote, and logs what it carries: its head commit, the commits it adds
+ * and the files it changes. GitHub refuses a pull request with nothing to
+ * merge, and so does the fake.
+ */
+function openPull(
+  fields: NewPull,
+  respond: (pull: FakePullRequest) => Omit<Answer, "event">,
+): Answer {
+  const head = fields.head.split(":").pop() ?? fields.head;
+  const headCommit = git([
+    "--git-dir",
+    state.remote,
+    "rev-parse",
+    "--verify",
+    "-q",
+    `refs/heads/${head}`,
+  ]);
+  const baseCommit = git([
+    "--git-dir",
+    state.remote,
+    "rev-parse",
+    "--verify",
+    "-q",
+    `refs/heads/${fields.base}`,
+  ]);
+  const range = `${baseCommit}...${headCommit}`;
+  const commits = Number(
+    git([
+      "--git-dir",
+      state.remote,
+      "rev-list",
+      "--count",
+      `${baseCommit}..${headCommit}`,
+    ]) || 0,
+  );
+  const refused = (reason: string): Answer => ({
+    event: { event: "pr.create.refused", head, base: fields.base, reason },
+    error: `UNSUPPORTED: ${reason}`,
+  });
+
+  if (headCommit === "") {
+    return refused(`the branch ${head} is not on the remote. Push it first.`);
+  }
+
+  if (baseCommit === "") {
+    return refused(`the base branch ${fields.base} is not on the remote.`);
+  }
+
+  if (headCommit === baseCommit || commits === 0) {
+    return refused(
+      `${head} has no commits ahead of ${fields.base}, so the pull request has nothing to merge.`,
+    );
+  }
+
   const pull: FakePullRequest = {
     number: state.pulls.length + 1,
     ...fields,
-    head: fields.head.split(":").pop() ?? fields.head,
+    head,
     state: "open",
     merged: false,
   };
 
   state.pulls.push(pull);
 
-  return pull;
+  return {
+    event: {
+      event: "pr.create",
+      number: pull.number,
+      draft: pull.draft,
+      head: pull.head,
+      base: pull.base,
+      title: pull.title,
+      headSha: headCommit,
+      commits,
+      files: git(["--git-dir", state.remote, "diff", "--name-only", range])
+        .split("\n")
+        .filter(Boolean),
+      stat: git(["--git-dir", state.remote, "diff", "--shortstat", range]),
+    },
+    ...respond(pull),
+  };
 }
 
-function createdEvent(pull: FakePullRequest): Event {
+/**
+ * Takes a draft out of draft. GitHub answers a pull request that is
+ * already ready with an error, and so does the fake.
+ */
+function markReady(
+  pull: FakePullRequest | undefined,
+  body: Answer["body"],
+  message?: string,
+): Answer {
+  if (!pull) {
+    return { event: { event: "pr.ready" }, error: "no pull request found" };
+  }
+
+  if (!pull.draft) {
+    return {
+      event: { event: "pr.ready", number: pull.number, reason: "not a draft" },
+      error: `UNSUPPORTED: pull request ${state.repo}#${pull.number} is not a draft.`,
+    };
+  }
+
+  pull.draft = false;
+
   return {
-    event: "pr.create",
-    number: pull.number,
-    draft: pull.draft,
-    head: pull.head,
-    base: pull.base,
-    title: pull.title,
+    event: { event: "pr.ready", number: pull.number },
+    ...(body === undefined ? {} : { body }),
+    ...(message === undefined ? {} : { text: message }),
   };
 }
 
@@ -529,15 +622,16 @@ function answerApi(rest: string[]): Answer {
 
   if (route === "/pulls") {
     if (method === "POST") {
-      const pull = createPull({
-        title: text(fields.title),
-        body: text(fields.body),
-        head: text(fields.head),
-        base: text(fields.base) || state.defaultBranch,
-        draft: fields.draft === true || fields.draft === "true",
-      });
-
-      return { event: createdEvent(pull), body: restPull(pull) };
+      return openPull(
+        {
+          title: text(fields.title),
+          body: text(fields.body),
+          head: text(fields.head),
+          base: text(fields.base) || state.defaultBranch,
+          draft: fields.draft === true || fields.draft === "true",
+        },
+        (pull) => ({ body: restPull(pull) }),
+      );
     }
 
     const head = search.get("head")?.split(":").pop();
@@ -650,13 +744,8 @@ function answerGraphql(query: string): Answer {
     return merge(pull, "graphql");
   }
 
-  if (query.includes("markPullRequestReadyForReview") && pull) {
-    pull.draft = false;
-
-    return {
-      event: { event: "pr.ready", number: pull.number },
-      body: { data: {} },
-    };
+  if (query.includes("markPullRequestReadyForReview")) {
+    return markReady(pull, { data: {} });
   }
 
   if (query.includes("reviewThreads")) {
@@ -694,30 +783,26 @@ function answerPr(subcommand: string, rest: string[]): Answer {
   switch (subcommand) {
     case "create": {
       const bodyFile = flagValue(flags, "--body-file", "-F");
-      const created = createPull({
-        title: flagValue(flags, "--title", "-t") ?? "",
-        body: bodyFile
-          ? readFileSync(bodyFile, "utf8")
-          : (flagValue(flags, "--body", "-b") ?? ""),
-        head: flagValue(flags, "--head", "-H") ?? currentBranch(),
-        base: flagValue(flags, "--base", "-B") ?? state.defaultBranch,
-        draft: flags.has("--draft") || flags.has("-d"),
-      });
-
-      return { event: createdEvent(created), text: pullUrl(created.number) };
+      return openPull(
+        {
+          title: flagValue(flags, "--title", "-t") ?? "",
+          body: bodyFile
+            ? readFileSync(bodyFile, "utf8")
+            : (flagValue(flags, "--body", "-b") ?? ""),
+          head: flagValue(flags, "--head", "-H") ?? currentBranch(),
+          base: flagValue(flags, "--base", "-B") ?? state.defaultBranch,
+          draft: flags.has("--draft") || flags.has("-d"),
+        },
+        (created) => ({ text: pullUrl(created.number) }),
+      );
     }
 
     case "ready": {
-      if (!pull) {
-        return { event: { event: "pr.ready" }, error: "no pull request found" };
-      }
-
-      pull.draft = false;
-
-      return {
-        event: { event: "pr.ready", number: pull.number },
-        text: `Pull request ${state.repo}#${pull.number} is marked as "ready for review"`,
-      };
+      return markReady(
+        pull,
+        undefined,
+        `Pull request ${state.repo}#${pull?.number ?? 0} is marked as "ready for review"`,
+      );
     }
 
     case "merge": {
