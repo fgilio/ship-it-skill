@@ -78,7 +78,7 @@ With [bonsai](https://github.com/publicala/claude-plugins/tree/main/plugins/bons
 
 ## Install
 
-```
+```text
 /plugin marketplace add fgilio/claude-plugins
 /plugin install ship-it@fgilio
 ```
