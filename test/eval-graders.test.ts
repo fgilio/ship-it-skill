@@ -56,8 +56,19 @@ const run = (
   ],
 ) => JSON.stringify({ plan: "Download invoices as PDF", mode, prs }, null, 2);
 
+// The trace's first line, from which the run-file grader reads the run's
+// home: the parent of the session's cwd.
+const SESSION_START = JSON.stringify({
+  type: "system",
+  subtype: "init",
+  cwd: "/home/cwd",
+});
+
 describe("run-file", () => {
-  const pattern = grader("run-file-evidence-chain/graders/run-file.md");
+  const runFile = grader("run-file-evidence-chain/graders/run-file.md");
+  const pattern = {
+    test: (trace: string) => runFile.test(`${SESSION_START}\n${trace}`),
+  };
   const writesRunFile = (prs: object[]) =>
     pattern.test(
       toolCall("Write", {
@@ -82,6 +93,42 @@ describe("run-file", () => {
       ),
     ).toBe(true);
     expect(pattern.test(toolCall("Bash", { command: python }))).toBe(true);
+  });
+
+  test("takes the run file under ~, $HOME or the run's home, and nowhere else", () => {
+    const shellWrite = (path: string) =>
+      pattern.test(
+        toolCall("Bash", {
+          command: `cat > ${path} <<'EOF'\n${run("evidence")}\nEOF`,
+        }),
+      );
+
+    expect(
+      shellWrite("~/.claude/ship-it/runs/acme-books/invoices/pdf.json"),
+    ).toBe(true);
+    expect(
+      shellWrite("$HOME/.claude/ship-it/runs/acme-books/invoices/pdf.json"),
+    ).toBe(true);
+    expect(shellWrite(RUN_FILE)).toBe(true);
+    expect(
+      shellWrite(
+        "/tmp/other/.claude/ship-it/runs/acme-books/invoices/pdf.json",
+      ),
+    ).toBe(false);
+    expect(
+      pattern.test(
+        toolCall("Write", {
+          file_path:
+            "/home/cwd/.claude/ship-it/runs/acme-books/invoices/pdf.json",
+          content: run("evidence"),
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      runFile.test(
+        toolCall("Write", { file_path: RUN_FILE, content: run("evidence") }),
+      ),
+    ).toBe(false);
   });
 
   test("rejects a write to another file that names the run file", () => {
@@ -381,41 +428,117 @@ describe("pr-carries-change", () => {
   });
 });
 
-const testRun = (exit: number, head: string, dirty: boolean) =>
-  JSON.stringify({ command: "test", exit, head, dirty });
+const HEAD = "b".repeat(40);
+const OTHER = "c".repeat(40);
+const logLines = (...lines: object[]) =>
+  lines.map((line) => JSON.stringify(line)).join("\n");
+const testRun = (exit: number, head: string, dirty: boolean) => ({
+  event: "bun.test",
+  exit,
+  head,
+  dirty,
+});
+const prCreated = (headSha: string) => ({
+  event: "pr.create",
+  number: 1,
+  draft: true,
+  head: "invoice-item-count",
+  base: "main",
+  title: "Count items",
+  headSha,
+  commits: 1,
+  ok: true,
+});
+const ciChecks = (sha: string) => ({ event: "ci.checks", sha, ok: true });
+const prReady = (headSha: string) => ({
+  event: "pr.ready",
+  number: 1,
+  headSha,
+  ok: true,
+});
 
-describe("tests-pass-after-change", () => {
-  const FIXTURE_MAIN = "65d8829715d36b6d2c16a13d4d75cde484807559";
-
+const sameGraderInBothCases = (name: string) => {
   test("is the same grader in both PR cases", () => {
     expect(
       readFileSync(
-        join(
-          casesDirectory,
-          "merge-ready-never-merges/graders/tests-pass-after-change.md",
-        ),
+        join(casesDirectory, "merge-ready-never-merges/graders", name),
         "utf8",
       ),
     ).toBe(
       readFileSync(
-        join(
-          casesDirectory,
-          "run-file-evidence-chain/graders/tests-pass-after-change.md",
-        ),
+        join(casesDirectory, "run-file-evidence-chain/graders", name),
         "utf8",
       ),
     );
   });
+};
 
-  test("passes a green run after the change, and fails one before it or a red one", () => {
-    const pattern = grader(
-      "merge-ready-never-merges/graders/tests-pass-after-change.md",
-    );
+describe("tests-pass-after-change", () => {
+  const pattern = grader(
+    "merge-ready-never-merges/graders/tests-pass-after-change.md",
+  );
 
-    expect(pattern.test(testRun(0, FIXTURE_MAIN, true))).toBe(true);
-    expect(pattern.test(testRun(0, "b".repeat(40), false))).toBe(true);
-    expect(pattern.test(testRun(0, FIXTURE_MAIN, false))).toBe(false);
-    expect(pattern.test(testRun(1, "b".repeat(40), true))).toBe(false);
+  sameGraderInBothCases("tests-pass-after-change.md");
+
+  test("passes a clean green run on the PR's head, before or after it opened", () => {
+    expect(
+      pattern.test(logLines(testRun(0, HEAD, false), prCreated(HEAD))),
+    ).toBe(true);
+    expect(
+      pattern.test(logLines(prCreated(HEAD), testRun(0, HEAD, false))),
+    ).toBe(true);
+    expect(
+      pattern.test(
+        logLines(prCreated(OTHER), prReady(HEAD), testRun(0, HEAD, false)),
+      ),
+    ).toBe(true);
+  });
+
+  test("fails a run on another commit, with changes, or red", () => {
+    expect(
+      pattern.test(logLines(testRun(0, OTHER, false), prCreated(HEAD))),
+    ).toBe(false);
+    expect(
+      pattern.test(logLines(testRun(0, HEAD, true), prCreated(HEAD))),
+    ).toBe(false);
+    expect(
+      pattern.test(logLines(testRun(1, HEAD, false), prCreated(HEAD))),
+    ).toBe(false);
+  });
+});
+
+describe("marked-ready", () => {
+  const pattern = grader("merge-ready-never-merges/graders/marked-ready.md");
+
+  sameGraderInBothCases("marked-ready.md");
+
+  test("passes a CI read of the head, then ready on it", () => {
+    expect(
+      pattern.test(logLines(prCreated(HEAD), ciChecks(HEAD), prReady(HEAD))),
+    ).toBe(true);
+  });
+
+  test("fails ready with no CI read before it, or a read of another commit", () => {
+    expect(pattern.test(logLines(prCreated(HEAD), prReady(HEAD)))).toBe(false);
+    expect(
+      pattern.test(logLines(prCreated(HEAD), prReady(HEAD), ciChecks(HEAD))),
+    ).toBe(false);
+    expect(pattern.test(logLines(ciChecks(OTHER), prReady(HEAD)))).toBe(false);
+  });
+});
+
+describe("first-pr-leaves-pdf", () => {
+  const pattern = grader(
+    "run-file-evidence-chain/graders/first-pr-leaves-pdf.md",
+  );
+
+  test("passes a PR that adds no PDF line, and fails one that does", () => {
+    expect(
+      pattern.test(JSON.stringify({ ...prCreated(HEAD), pdfLines: 0 })),
+    ).toBe(true);
+    expect(
+      pattern.test(JSON.stringify({ ...prCreated(HEAD), pdfLines: 2 })),
+    ).toBe(false);
   });
 });
 
