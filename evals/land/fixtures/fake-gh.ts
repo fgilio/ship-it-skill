@@ -636,7 +636,7 @@ function answerGraphql(query: string): Answer {
     return merge(pull, "graphql");
   }
 
-  if (/markPullRequestReadyForReview/.test(query) && pull) {
+  if (query.includes("markPullRequestReadyForReview") && pull) {
     pull.draft = false;
 
     return {
@@ -645,7 +645,7 @@ function answerGraphql(query: string): Answer {
     };
   }
 
-  if (/reviewThreads/.test(query)) {
+  if (query.includes("reviewThreads")) {
     return read({
       data: {
         repository: {
@@ -660,7 +660,7 @@ function answerGraphql(query: string): Answer {
     });
   }
 
-  if (/viewerDefaultMergeMethod/.test(query)) {
+  if (query.includes("viewerDefaultMergeMethod")) {
     return read({
       data: { repository: { viewerDefaultMergeMethod: "SQUASH" } },
     });
