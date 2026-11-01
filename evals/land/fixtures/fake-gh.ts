@@ -7,7 +7,8 @@
 // The scaffold copies it to `<workspace>/.fake-bin/gh` beside `state.json`
 // (FakeState below). Each call appends one JSON line to `gh-calls.jsonl`:
 // the `event` the graders read (pr.create, pr.ready, pr.merge, pr.update,
-// label.add, comment, read, unknown), its details, and the raw `args`.
+// ci.checks, label.add, comment, read, unknown), its details, and the raw
+// `args`. The scaffold's bun wrapper adds a `bun.test` line per test run.
 // A call GitHub would refuse (an empty pull request, a ready one marked
 // ready) fails with `UNSUPPORTED:` and logs why.
 
@@ -472,9 +473,21 @@ function openPull(
         .split("\n")
         .filter(Boolean),
       stat: git(["--git-dir", state.remote, "diff", "--shortstat", range]),
+      pdfLines: addedLinesMentioningPdf(range),
     },
     ...respond(pull),
   };
+}
+
+/**
+ * The lines the pull request adds that name the PDF format, so a grader
+ * can tell a PR that started the PDF work from one that left it alone.
+ */
+function addedLinesMentioningPdf(range: string): number {
+  return git(["--git-dir", state.remote, "diff", range])
+    .split("\n")
+    .filter((line) => line.startsWith("+") && !line.startsWith("+++"))
+    .filter((line) => /pdf/i.test(line)).length;
 }
 
 /**
@@ -500,7 +513,11 @@ function markReady(
   pull.draft = false;
 
   return {
-    event: { event: "pr.ready", number: pull.number },
+    event: {
+      event: "pr.ready",
+      number: pull.number,
+      headSha: headSha(pull.head),
+    },
     ...(body === undefined ? {} : { body }),
     ...(message === undefined ? {} : { text: message }),
   };
@@ -673,7 +690,10 @@ function answerApi(rest: string[]): Answer {
     const sha = commitMatch[1] ?? NO_SHA;
 
     if (commitMatch[2] === "/check-runs") {
-      return read({ total_count: 1, check_runs: [checkRun(sha)] });
+      return {
+        event: { event: "ci.checks", sha },
+        body: { total_count: 1, check_runs: [checkRun(sha)] },
+      };
     }
 
     if (commitMatch[2] === "/status") {

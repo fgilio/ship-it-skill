@@ -279,18 +279,40 @@ describe("the land eval workspace", () => {
     writeFileSync(join(workspace, "README.md"), "Changed\n");
     run("bun", ["run", "test"]);
 
-    const runs = readFileSync(
-      join(workspace, ".fake-bin", "bun-calls.jsonl"),
-      "utf8",
-    )
-      .trim()
-      .split("\n")
-      .map((line): unknown => JSON.parse(line));
     const head = run("git", ["rev-parse", "HEAD"]).stdout;
 
-    expect(runs).toEqual([
-      { command: "test", exit: 0, head, dirty: false },
-      { command: "test", exit: 0, head, dirty: true },
+    expect(events().filter(({ event }) => event === "bun.test")).toEqual([
+      { event: "bun.test", exit: 0, head, dirty: false },
+      { event: "bun.test", exit: 0, head, dirty: true },
+    ]);
+  });
+
+  test("logs the CI reads, the head marked ready and the PDF lines a PR adds", () => {
+    run("bash", [setupScript]);
+    run("git", ["checkout", "-q", "-b", "invoice-pdf"]);
+    writeFileSync(
+      join(workspace, "NOTES.md"),
+      "Plan the PDF format\nand the csv one\n",
+    );
+    run("git", ["add", "NOTES.md"]);
+    run("git", ["commit", "-q", "-m", "Notes"]);
+    run("git", ["push", "-q", "origin", "invoice-pdf"]);
+    run("gh", ["pr", "create", "--draft", "--title", "Notes", "--body", "x"]);
+    run("bun", [join(scriptsDirectory, "ship-it-ci-watch.ts"), "1"]);
+    run("gh", ["pr", "ready", "1"]);
+
+    const head = run("git", ["rev-parse", "HEAD"]).stdout;
+
+    expect(events()).toContainEqual(
+      expect.objectContaining({ event: "pr.create", pdfLines: 1 }),
+    );
+    expect(
+      events()
+        .filter(({ event }) => event === "ci.checks" || event === "pr.ready")
+        .map(({ event, sha, headSha }) => [event, sha ?? headSha]),
+    ).toEqual([
+      ["ci.checks", head],
+      ["pr.ready", head],
     ]);
   });
 

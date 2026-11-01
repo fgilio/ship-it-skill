@@ -47,9 +47,9 @@ mkdir -p .fake-bin
 printf '#!/bin/sh\nexec "%s" "$@"\n' "$git_binary" > .fake-bin/git
 cp "$fixtures/fake-gh.ts" .fake-bin/gh
 
-# Logs each `bun test` run to bun-calls.jsonl with its exit code, the
-# commit it ran on and whether the work tree held changes, so a grader can
-# tell a passing run after the change from one on the fixture as it was.
+# Logs each `bun test` run to the gh call log, in order with the gh calls,
+# with its exit code, the commit it ran on and whether the work tree held
+# changes, so a grader can find a clean passing run on the PR's head.
 cat > .fake-bin/bun <<'EOF'
 #!/bin/sh
 if [ "$1" != test ]; then
@@ -62,13 +62,13 @@ dirty=false
 if [ -n "$("@GIT@" status --porcelain 2>/dev/null)" ]; then
   dirty=true
 fi
-printf '{"command":"test","exit":%d,"head":"%s","dirty":%s}\n' "$status" "$head" "$dirty" >> "@LOG@"
+printf '{"event":"bun.test","exit":%d,"head":"%s","dirty":%s}\n' "$status" "$head" "$dirty" >> "@LOG@"
 exit "$status"
 EOF
 sed -i.template \
   -e "s|@BUN@|$bun_binary|g" \
   -e "s|@GIT@|$git_binary|g" \
-  -e "s|@LOG@|$PWD/.fake-bin/bun-calls.jsonl|g" \
+  -e "s|@LOG@|$PWD/.fake-bin/gh-calls.jsonl|g" \
   .fake-bin/bun
 rm .fake-bin/bun.template
 chmod +x .fake-bin/git .fake-bin/gh .fake-bin/bun
@@ -107,4 +107,3 @@ cat > .fake-bin/state.json <<EOF
 }
 EOF
 : > .fake-bin/gh-calls.jsonl
-: > .fake-bin/bun-calls.jsonl
