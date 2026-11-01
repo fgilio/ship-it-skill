@@ -752,7 +752,8 @@ function requirements(repository: string, branch: string): Requirements {
     ),
   );
   const protectionRefused =
-    protection instanceof ScriptError && !/HTTP 404/.test(protection.message);
+    protection instanceof ScriptError &&
+    !protection.message.includes("HTTP 404");
   const protectedContexts = protectedStatusChecks(
     protection instanceof ScriptError ? {} : protection,
   );
