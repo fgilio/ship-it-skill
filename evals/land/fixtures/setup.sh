@@ -49,7 +49,9 @@ printf '.fake-bin/\n' >> .git/info/exclude
 bun_binary="$(command -v bun)"
 
 mkdir -p .fake-bin
-printf '#!/bin/sh\nexec "%s" "$@"\n' "$git_binary" > .fake-bin/git
+# The session's git, the fake gh's and the bun wrapper's skip the
+# operator's global and system config too.
+printf '#!/bin/sh\nGIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 exec "%s" "$@"\n' "$git_binary" > .fake-bin/git
 cp "$fixtures/fake-gh.ts" .fake-bin/gh
 
 # Logs each `bun test` run to the gh call log, in order with the gh calls,
@@ -82,7 +84,7 @@ exit "$status"
 EOF
 sed -i.template \
   -e "s|@BUN@|$bun_binary|g" \
-  -e "s|@GIT@|$git_binary|g" \
+  -e "s|@GIT@|$PWD/.fake-bin/git|g" \
   -e "s|@LOG@|$PWD/.fake-bin/gh-calls.jsonl|g" \
   .fake-bin/bun
 rm .fake-bin/bun.template

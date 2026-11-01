@@ -311,7 +311,7 @@ describe("the land eval workspace", () => {
     ]);
   });
 
-  test("logs the CI reads, the head marked ready and the PDF lines a PR adds", () => {
+  test("logs the CI reads, the head marked ready and the PDF lines a PR adds, whatever git's diff settings", () => {
     run("bash", [setupScript]);
     run("git", ["checkout", "-q", "-b", "invoice-pdf"]);
     writeFileSync(
@@ -325,7 +325,25 @@ describe("the land eval workspace", () => {
     run("git", ["add", "NOTES.md", "test/refuse.test.ts"]);
     run("git", ["commit", "-q", "-m", "Notes"]);
     run("git", ["push", "-q", "origin", "invoice-pdf"]);
-    run("gh", ["pr", "create", "--draft", "--title", "Notes", "--body", "x"]);
+    // Config from the environment reaches git past GIT_CONFIG_GLOBAL and
+    // GIT_CONFIG_NOSYSTEM, so it stands in for a system config that colors
+    // diffs or runs an external diff tool.
+    spawnSync(
+      "gh",
+      ["pr", "create", "--draft", "--title", "Notes", "--body", "x"],
+      {
+        cwd: workspace,
+        env: {
+          ...process.env,
+          PATH: `.fake-bin:${process.env.PATH}`,
+          GIT_CONFIG_COUNT: "2",
+          GIT_CONFIG_KEY_0: "color.diff",
+          GIT_CONFIG_VALUE_0: "always",
+          GIT_CONFIG_KEY_1: "diff.external",
+          GIT_CONFIG_VALUE_1: "false",
+        },
+      },
+    );
     run("bun", [join(scriptsDirectory, "ship-it-ci-watch.ts"), "1"]);
     run("gh", ["pr", "ready", "1"]);
 

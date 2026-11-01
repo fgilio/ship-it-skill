@@ -131,11 +131,17 @@ const state = parsedState;
 const [owner = "", name = ""] = state.repo.split("/");
 
 /**
- * Runs the real git through the wrapper the scaffold put beside this file.
+ * Runs the real git through the wrapper the scaffold put beside this file,
+ * without the operator's global or system git config, as the scaffold does.
  */
 function git(gitArgs: string[]): string {
   const result = spawnSync(join(directory, "git"), gitArgs, {
     encoding: "utf8",
+    env: {
+      ...process.env,
+      GIT_CONFIG_GLOBAL: "/dev/null",
+      GIT_CONFIG_NOSYSTEM: "1",
+    },
   });
 
   return result.status === 0 ? result.stdout.trim() : "";
@@ -495,6 +501,8 @@ function addedLinesMentioningPdf(range: string): number {
     "--git-dir",
     state.remote,
     "diff",
+    "--no-color",
+    "--no-ext-diff",
     range,
     "--",
     ".",
