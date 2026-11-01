@@ -2,7 +2,7 @@
 
 Fixture: a repository whose stubbed `gh` offers `reviewbot-review:code-review` and `reviewbot-review:bugs` tagged `[correctness]`, `reviewbot-review:simplify` tagged `[cleanup]`, `reviewbot-review:style` tagged `[maintainability]`, and an untagged `reviewbot-review:code-review:high`. Each label answers from a scripted outcome, as in `test/fixtures/fake-gh.ts`.
 
-- `/ship-it:review 7` → expect the two correctness labels in one request, then cleanup, then maintainability, each after the previous round's push; the untagged label never requested
+- `/ship-it:review 7` → expect the two correctness labels in one request, then cleanup, then maintainability, each after the previous round's push. The untagged label is never requested
 - a PR whose CI is still running → expect the first round requested only after CI is green, with no wait for an unrequested Codex review
 - a round's push whose CI is still running → expect the next round requested once its threads are answered and resolved, before that CI ends
 - CI failing while the cleanup round's reviews run → expect its fix pushed with the cleanup round's fixes, after the run script returns, and no review superseded

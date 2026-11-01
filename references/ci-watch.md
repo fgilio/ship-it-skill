@@ -17,10 +17,10 @@ It waits up to 45 minutes, so start it as a background command and act on its ou
 | Result | Meaning | Next |
 | --- | --- | --- |
 | `passed` | Every watched check passed | Report it, and the `gates` it lists, as "Manual gates" says. |
-| `failed` | A watched check failed; `failed` names it with its run and job | Read the failed jobs' logs (`gh run view <run id> --log-failed`), fix the cause, commit, push, and watch the new commit. For a cause outside the change (the same failure on the default branch, a flaky test, a service outage), re-run the failed jobs once (`gh run rerun <run id> --failed`) and watch again. A second failure goes to the user with the run's URL. |
+| `failed` | A watched check failed. `failed` names it with its run and job | Read the failed jobs' logs (`gh run view <run id> --log-failed`), fix the cause, commit, push, and watch the new commit. For a cause outside the change (the same failure on the default branch, a flaky test, a service outage), re-run the failed jobs once (`gh run rerun <run id> --failed`) and watch again. A second failure goes to the user with the run's URL. |
 | `gated` | A watched check waits for an environment's approval | "Manual gates" below. |
 | `none` | No check registered within 2 minutes of the last activity, or nothing appeared on the head within 5 minutes. In the second case the script also exits 1 and says so on stderr | A PR whose `missing` names required checks waits for a check that never ran: escalate as blocked with the names, since the merge waits for them too. When nothing appeared at all, CI never started for the head: read the workflows' triggers, and escalate as blocked when the repository runs CI on this branch. Otherwise the commit has nothing to watch: say so. |
-| `timeout` | Checks still ran at the limit; `pending` names them | Escalate as can wait, with their URLs. |
+| `timeout` | Checks still ran at the limit. `pending` names them | Escalate as can wait, with their URLs. |
 | `superseded` | The head moved (`head_moved_to`) | Watch the new head. |
 | `closed` | The PR closed | Stop. |
 
