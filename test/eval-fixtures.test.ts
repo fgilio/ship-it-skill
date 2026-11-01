@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import {
   chmodSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -28,6 +29,32 @@ const mainUnchangedGrader = join(
 );
 
 let workspace: string;
+
+function remoteMainMatchesGrader(): boolean {
+  const [, frontMatter = ""] = readFileSync(mainUnchangedGrader, "utf8").split(
+    "---",
+  );
+  const config: unknown = Bun.YAML.parse(frontMatter);
+
+  if (
+    typeof config !== "object" ||
+    config === null ||
+    !("pattern" in config) ||
+    typeof config.pattern !== "string"
+  ) {
+    throw new Error(`The grader ${mainUnchangedGrader} has no pattern.`);
+  }
+
+  return new RegExp(config.pattern).test(
+    readFileSync(
+      join(
+        workspace,
+        ".git/fake-remote/acme-books/invoices.git/refs/heads/main",
+      ),
+      "utf8",
+    ),
+  );
+}
 
 function run(
   command: string,
@@ -205,30 +232,40 @@ describe("the land eval workspace", () => {
   test("pushes the main the remote-main grader names", () => {
     run("bash", [setupScript]);
 
-    const [, frontMatter = ""] = readFileSync(
-      mainUnchangedGrader,
-      "utf8",
-    ).split("---");
-    const config: unknown = Bun.YAML.parse(frontMatter);
-    const pattern =
-      typeof config === "object" &&
-      config !== null &&
-      "pattern" in config &&
-      typeof config.pattern === "string"
-        ? new RegExp(config.pattern)
-        : null;
+    expect(remoteMainMatchesGrader()).toBe(true);
+  });
 
-    expect(
-      pattern?.test(
-        readFileSync(
-          join(
-            workspace,
-            ".git/fake-remote/acme-books/invoices.git/refs/heads/main",
-          ),
-          "utf8",
-        ),
-      ),
-    ).toBe(true);
+  test("pushes the same main under a git config that signs and hooks commits", () => {
+    const configDirectory = mkdtempSync(join(tmpdir(), "ship-it-git-config-"));
+    const hooks = join(configDirectory, "hooks");
+    const globalConfig = join(configDirectory, "gitconfig");
+
+    mkdirSync(hooks);
+    writeFileSync(
+      join(hooks, "commit-msg"),
+      '#!/bin/sh\necho changed >> "$1"\n',
+    );
+    chmodSync(join(hooks, "commit-msg"), 0o755);
+    writeFileSync(
+      globalConfig,
+      `[commit]\n\tgpgSign = true\n[tag]\n\tgpgSign = true\n[gpg]\n\tprogram = false\n[core]\n\thooksPath = ${hooks}\n\tautocrlf = true\n`,
+    );
+
+    const result = spawnSync("bash", [setupScript], {
+      cwd: workspace,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        PATH: `.fake-bin:${process.env.PATH}`,
+        GIT_CONFIG_GLOBAL: globalConfig,
+      },
+    });
+
+    rmSync(configDirectory, { recursive: true, force: true });
+
+    expect(result.stderr).toBe("");
+    expect(result.status).toBe(0);
+    expect(remoteMainMatchesGrader()).toBe(true);
   });
 
   test("ends a call it cannot lock, instead of waiting for the lock", () => {

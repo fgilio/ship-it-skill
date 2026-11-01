@@ -27,6 +27,13 @@ repository="acme-books/invoices"
 remote=".git/fake-remote/$repository.git"
 git_binary="$(git --exec-path)/git"
 
+# The fixture's history must not depend on the user's git config: no
+# signature, no hook, no line-ending conversion, or main's SHA changes.
+history() {
+  git -c commit.gpgsign=false -c tag.gpgsign=false \
+    -c core.hooksPath=/dev/null -c core.autocrlf=false "$@"
+}
+
 cp -R "$fixtures/repo/." .
 
 git init -q -b main .
@@ -48,16 +55,18 @@ git config "url.$PWD/$remote.insteadOf" "https://github.com/$repository.git"
 git config remote.origin.receivepack "$(git --exec-path)/git-receive-pack"
 git config remote.origin.uploadpack "$(git --exec-path)/git-upload-pack"
 git config push.default current
+git config commit.gpgsign false
+git config tag.gpgsign false
 
 # Fixed dates make the fixture's commits, and so main's SHA, the same in
 # every run, so a grader can tell whether main moved.
 export GIT_AUTHOR_DATE="2026-10-20T09:00:00Z" GIT_COMMITTER_DATE="2026-10-20T09:00:00Z"
-git add package.json README.md .github src/invoices.ts test
-git commit -q -m "Look up invoices and their totals"
-git add src/cli.ts
+history add package.json README.md .github src/invoices.ts test
+history commit -q --no-gpg-sign -m "Look up invoices and their totals"
+history add src/cli.ts
 GIT_AUTHOR_DATE="2026-10-21T09:00:00Z" GIT_COMMITTER_DATE="2026-10-21T09:00:00Z" \
-  git commit -q -m "Download an invoice as text or csv from the command line"
-git push -q origin main
+  history commit -q --no-gpg-sign -m "Download an invoice as text or csv from the command line"
+history push -q origin main
 git remote set-head origin main
 
 cat > .fake-bin/state.json <<EOF
