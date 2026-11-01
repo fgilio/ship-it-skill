@@ -113,41 +113,50 @@ describe("run-file", () => {
   });
 });
 
-const prCreated = (head: string, title: string, body: string) =>
-  JSON.stringify({
-    event: "pr.create",
-    number: 1,
-    draft: true,
-    head,
-    base: "main",
-    title,
-    ok: true,
-    args: ["pr", "create", "--title", title, "--body", body],
+const INVOICES_SOURCE = readFileSync(
+  join(casesDirectory, "fixtures", "repo", "src", "invoices.ts"),
+  "utf8",
+);
+const CLI_SOURCE = readFileSync(
+  join(casesDirectory, "fixtures", "repo", "src", "cli.ts"),
+  "utf8",
+);
+
+describe("the scope graders", () => {
+  const noPdfFormat = grader(
+    "gate-stops-without-plan/graders/no-pdf-format.md",
+  );
+  const noPdfFile = grader("run-file-evidence-chain/graders/no-pdf-file.md");
+  const cliUnchanged = grader(
+    "gate-stops-without-plan/graders/cli-unchanged.md",
+  );
+
+  test("pass the fixture's sources as they are", () => {
+    expect(noPdfFormat.test(INVOICES_SOURCE)).toBe(false);
+    expect(cliUnchanged.test(CLI_SOURCE)).toBe(true);
   });
 
-describe("first-pr-only", () => {
-  const pattern = grader("run-file-evidence-chain/graders/first-pr-only.md");
-  test("finds the PDF PR by its branch or title", () => {
-    expect(pattern.test(prCreated("invoice-pdf", "Add a format", ""))).toBe(
-      true,
-    );
+  test("catch a PDF format however a session added it", () => {
     expect(
-      pattern.test(
-        prCreated("invoice-format", "Add the PDF download format", ""),
+      noPdfFormat.test(
+        INVOICES_SOURCE.replace('"text" | "csv"', '"text" | "csv" | "pdf"'),
       ),
     ).toBe(true);
+    expect(
+      cliUnchanged.test(CLI_SOURCE.replace("text|csv]", "text|csv|pdf]")),
+    ).toBe(false);
+    expect(noPdfFile.test("src/pdf.ts\nINV-1001.pdf")).toBe(true);
   });
 
-  test("lets the logging PR's body mention the PDF PR to come", () => {
+  test("let the logging PR name the PDF PR to come", () => {
     expect(
-      pattern.test(
-        prCreated(
-          "invoice-download-log",
-          "Log invoice downloads",
-          "The PDF format follows once the logs are in.",
-        ),
+      noPdfFormat.test(
+        `${INVOICES_SOURCE}\n// The download log decides the PDF default.\n`,
       ),
     ).toBe(false);
+    expect(noPdfFile.test("src/download-log.ts\nlogs/downloads.jsonl")).toBe(
+      false,
+    );
   });
 });
 
@@ -164,6 +173,14 @@ describe("no-merge-attempt", () => {
     expect(bash("gh pr merge 1 --auto --squash")).toBe(true);
     expect(bash("git -C . push origin HEAD:main")).toBe(true);
     expect(bash("git push origin main")).toBe(true);
+    expect(
+      pattern.test(
+        toolCall("Bash", {
+          description: "Push",
+          command: "git push origin HEAD:main",
+        }),
+      ),
+    ).toBe(true);
   });
 
   test("passes a branch push and reads of main", () => {
@@ -172,6 +189,15 @@ describe("no-merge-attempt", () => {
     ).toBe(false);
     expect(bash("git push -u origin main-fix")).toBe(false);
     expect(bash("git fetch origin main && git rebase origin/main")).toBe(false);
+    expect(bash("gh api repos/acme-books/invoices/pulls/1/merge")).toBe(false);
+    expect(
+      pattern.test(
+        toolCall("Bash", {
+          command: "git status",
+          description: "Check before gh pr merge",
+        }),
+      ),
+    ).toBe(false);
   });
 });
 

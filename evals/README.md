@@ -27,8 +27,8 @@ Each case starts in the same workspace: the Acme Books invoices command line too
 
 | Case | Prompt | Guards |
 | --- | --- | --- |
-| `gate-stops-without-plan` | `/ship-it:land add PDF downloads to the invoices` | The gate: a one-line request stops land. No new branch or git object in the workspace, no pull request in the `gh` log, no Edit or Write call, and the reply names what the plan statement lacks. |
-| `run-file-evidence-chain` | `merge-ready` with a two-PR plan where the PDF PR needs the logging PR's evidence | The run file and the chain: one tool call writes `~/.claude/ship-it/runs/acme-books/invoices/<slug>.json` with `mode` `merge-ready` and `depends_on` carrying `needs: evidence`. One branch and one pull request, a draft that names no PDF, marked ready, never merged, and a reply that hands it over and says the PDF PR waits. |
+| `gate-stops-without-plan` | `/ship-it:land add PDF downloads to the invoices` | The gate: a one-line request stops land. No new branch or git object in the workspace, no pull request in the `gh` log, no Edit or Write call, the sources still offer only the text and csv formats, no new file names the PDF format, and the reply names what the plan statement lacks. |
+| `run-file-evidence-chain` | `merge-ready` with a two-PR plan where the PDF PR needs the logging PR's evidence | The run file and the chain: one tool call writes `~/.claude/ship-it/runs/acme-books/invoices/<slug>.json` with `mode` `merge-ready` and `depends_on` carrying `needs: evidence`. One branch and one pull request, opened as a draft, marked ready and never merged, no PDF format in the sources and no file that names it, and a reply that hands the PR over and says the PDF PR waits. |
 | `merge-ready-never-merges` | `merge-ready` with a one-PR plan | The merge mode: one pull request, marked ready, no merge call in the `gh` log, no merge attempt in any shell command (including a push to `main`), and the PR URL in the reply. |
 
 Every grader but two reads an exact observable: the files the session created, a file's contents, or the transcript's tool calls. The two `llm` graders read the final reply against a PASS and FAIL rubric.
