@@ -26,7 +26,7 @@ The latest run of each case on the current graders:
 | Case                       | Commit    | Runs passed | Score | Wall  | Cost  |
 | -------------------------- | --------- | ----------- | ----- | ----- | ----- |
 | `gate-stops-without-plan`  | `ef49cca` | 3 of 3      | 1.00  | 67 s  | $0.48 |
-| `merge-ready-never-merges` | `43dd151` | 3 of 3      | 1.00  | 407 s | $2.33 |
+| `merge-ready-never-merges` | `fcd43f8` | 3 of 3      | 1.00  | 369 s | $2.16 |
 | `run-file-evidence-chain`  | `afff461` | 3 of 3      | 1.00  | 978 s | $4.57 |
 
 ## The land cases
