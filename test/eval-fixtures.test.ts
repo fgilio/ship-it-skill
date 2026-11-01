@@ -232,6 +232,19 @@ describe("the land eval workspace", () => {
       "-f",
       "title=t",
     ]);
+    const listWithoutGet = run("gh", [
+      "api",
+      "repos/{owner}/{repo}/pulls",
+      "-f",
+      "head=acme-books:empty-branch",
+      "-f",
+      "state=open",
+    ]);
+
+    expect(listWithoutGet.stderr).toContain(
+      "HTTP 422: Validation Failed (base, title missing)",
+    );
+
     const unpushed = run("gh", [
       "pr",
       "create",
@@ -255,7 +268,7 @@ describe("the land eval workspace", () => {
     );
     expect(
       events().filter(({ event }) => event === "pr.create.refused"),
-    ).toHaveLength(3);
+    ).toHaveLength(4);
     expect(events().some(({ event }) => event === "pr.create")).toBe(false);
   });
 

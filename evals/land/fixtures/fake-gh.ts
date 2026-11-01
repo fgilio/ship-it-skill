@@ -645,12 +645,25 @@ function answerApi(rest: string[]): Answer {
 
   if (route === "/pulls") {
     if (method === "POST") {
+      // GitHub answers 422 when head, base or title is missing, which is
+      // what a list query sent without -X GET gets, since gh posts fields.
+      const missing = ["head", "base", "title"].filter(
+        (field) => text(fields[field]) === "",
+      );
+
+      if (missing.length > 0) {
+        return {
+          event: { event: "pr.create.refused", missing },
+          error: `HTTP 422: Validation Failed (${missing.join(", ")} missing). Pass -X GET to list pull requests.`,
+        };
+      }
+
       return openPull(
         {
           title: text(fields.title),
           body: text(fields.body),
           head: text(fields.head),
-          base: text(fields.base) || state.defaultBranch,
+          base: text(fields.base),
           draft: fields.draft === true || fields.draft === "true",
         },
         (pull) => ({ body: restPull(pull) }),

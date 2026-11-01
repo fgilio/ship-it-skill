@@ -56,10 +56,15 @@ cat > .fake-bin/bun <<'EOF'
 if [ "$1" != test ]; then
   exec "@BUN@" "$@"
 fi
-index=$(mktemp)
-cp .git/index "$index" 2>/dev/null
-tree=$(GIT_INDEX_FILE="$index" "@GIT@" add -A 2>/dev/null && GIT_INDEX_FILE="$index" "@GIT@" write-tree 2>/dev/null)
-rm -f "$index"
+# The scratch index lives in .git: the sandbox refuses the system temp
+# directory that mktemp picks.
+index="$("@GIT@" rev-parse --absolute-git-dir 2>/dev/null)/eval-test-index.$$"
+tree=""
+if cp "$("@GIT@" rev-parse --git-path index 2>/dev/null)" "$index" 2>/dev/null; then
+  tree=$(GIT_INDEX_FILE="$index" "@GIT@" add -A 2>/dev/null &&
+    GIT_INDEX_FILE="$index" "@GIT@" write-tree 2>/dev/null)
+  rm -f "$index"
+fi
 "@BUN@" "$@"
 status=$?
 head=$("@GIT@" rev-parse HEAD 2>/dev/null)
