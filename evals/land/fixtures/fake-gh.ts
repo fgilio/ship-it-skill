@@ -485,11 +485,22 @@ function openPull(
 }
 
 /**
- * The lines the pull request adds that name the PDF format, so a grader
- * can tell a PR that started the PDF work from one that left it alone.
+ * The lines the pull request adds outside its tests that name the PDF
+ * format, so a grader can tell a PR that started the PDF work from one
+ * that left it alone. Tests may name "pdf" as a format the CLI refuses,
+ * and a test that expects PDF to work fails the PR's own test run.
  */
 function addedLinesMentioningPdf(range: string): number {
-  return git(["--git-dir", state.remote, "diff", range])
+  return git([
+    "--git-dir",
+    state.remote,
+    "diff",
+    range,
+    "--",
+    ".",
+    ":(exclude)test",
+    ":(exclude)*.test.ts",
+  ])
     .split("\n")
     .filter((line) => line.startsWith("+") && !line.startsWith("+++"))
     .filter((line) => /pdf/i.test(line)).length;

@@ -318,7 +318,11 @@ describe("the land eval workspace", () => {
       join(workspace, "NOTES.md"),
       "Plan the PDF format\nand the csv one\n",
     );
-    run("git", ["add", "NOTES.md"]);
+    writeFileSync(
+      join(workspace, "test", "refuse.test.ts"),
+      'test("refuses pdf", () => expect(isFormat("pdf")).toBe(false));\n',
+    );
+    run("git", ["add", "NOTES.md", "test/refuse.test.ts"]);
     run("git", ["commit", "-q", "-m", "Notes"]);
     run("git", ["push", "-q", "origin", "invoice-pdf"]);
     run("gh", ["pr", "create", "--draft", "--title", "Notes", "--body", "x"]);
