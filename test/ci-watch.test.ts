@@ -1,6 +1,15 @@
-import assert from "node:assert/strict";
-import { afterEach, beforeEach, describe, test } from "node:test";
-import { createSandbox } from "./sandbox.mjs";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  setDefaultTimeout,
+  test,
+} from "bun:test";
+
+import type { FakeCheck, FakeRule, FakeState } from "./fixtures/fake-gh";
+import { createSandbox } from "./sandbox";
+import type { Sandbox } from "./sandbox";
 
 const HEAD = "a".repeat(40);
 const OTHER_HEAD = "b".repeat(40);
@@ -17,9 +26,69 @@ const SECRET_SCAN = ".github/workflows/secret-scan.yml";
 const FAST = ["--interval", "0.01", "--timeout", "0.5", "--register", "0.25"];
 const SHORT = "0.005";
 
-let sandbox;
+type CheckSpec = Omit<FakeCheck, "id">;
 
-function requireContexts(...contexts) {
+interface WatchOutput {
+  result: string;
+  repository: string;
+  pull_request?: number;
+  commit?: string;
+  head?: string;
+  head_moved_to?: string;
+  reason?: string;
+  requirements_known?: boolean;
+  required: string[];
+  watched: string[];
+  passed: string[];
+  failed: {
+    name: string;
+    conclusion: string | null;
+    url: string | null;
+    run_id: number | null;
+    job_id: number | null;
+  }[];
+  pending: { name: string; status: string | null; url: string | null }[];
+  missing: string[];
+  gates: {
+    run_id: number;
+    url: string | null;
+    environment: string;
+    environment_id: number;
+    can_approve: boolean;
+    approved: boolean;
+    approval_error?: string;
+    jobs: string[];
+  }[];
+}
+
+function isWatchOutput(value: unknown): value is WatchOutput {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "result" in value &&
+    "gates" in value &&
+    Array.isArray(value.gates)
+  );
+}
+
+function parseWatchOutput(stdout: string): WatchOutput {
+  const output: unknown = JSON.parse(stdout);
+
+  if (!isWatchOutput(output)) {
+    throw new Error(`The watch printed no result: ${stdout}`);
+  }
+
+  return output;
+}
+
+// Each test runs the scripts as processes and waits through their polls.
+setDefaultTimeout(60_000);
+
+let sandbox: Sandbox;
+
+function requireContexts(
+  ...contexts: (string | { context: string; integration_id: number })[]
+): FakeRule {
   return {
     type: "required_status_checks",
     parameters: {
@@ -30,25 +99,29 @@ function requireContexts(...contexts) {
   };
 }
 
-function requireWorkflows(...paths) {
+function requireWorkflows(...paths: string[]): FakeRule {
   return {
     type: "workflows",
     parameters: { workflows: paths.map((path) => ({ path })) },
   };
 }
 
-function check(name, overrides = {}) {
+function check(name: string, overrides: Partial<CheckSpec> = {}): CheckSpec {
   return { name, head_sha: HEAD, run_id: RUN, ...overrides };
 }
 
-function gate(name, overrides = {}) {
+function gate(name: string, overrides: Partial<CheckSpec> = {}): CheckSpec {
   return check(name, {
     gate: { environment: STAGING, can_approve: true, waitsAtPoll: 1 },
     ...overrides,
   });
 }
 
-function writeState(overrides = {}) {
+function writeState(
+  overrides: Partial<Omit<FakeState, "checkRuns">> & {
+    checkRuns?: CheckSpec[];
+  } = {},
+): void {
   const { checkRuns = [], ...rest } = overrides;
 
   sandbox.writeState({
@@ -63,25 +136,27 @@ function writeState(overrides = {}) {
     },
     reviews: [],
     comments: [],
-    checkRuns: checkRuns.map((run, index) => ({ id: index + 1, ...run })),
     rules: [],
     ...rest,
+    checkRuns: checkRuns.map((run, index) =>
+      Object.assign({ id: index + 1 }, run),
+    ),
   });
 }
 
-async function watch(target = "7", args = []) {
-  const result = await sandbox.runScript("ship-it-ci-watch.mjs", [
+async function watch(target = "7", args: string[] = []): Promise<WatchOutput> {
+  const result = await sandbox.runScript("ship-it-ci-watch.ts", [
     target,
     ...FAST,
     ...args,
   ]);
 
-  assert.equal(result.code, 0, result.stderr);
+  expect(result.code, result.stderr).toBe(0);
 
-  return JSON.parse(result.stdout);
+  return parseWatchOutput(result.stdout);
 }
 
-function approvals() {
+function approvals(): string[][] {
   return sandbox
     .ghCalls()
     .filter(
@@ -89,7 +164,7 @@ function approvals() {
         command === "api" &&
         flag === "-X" &&
         method === "POST" &&
-        path.endsWith("/pending_deployments"),
+        path?.endsWith("/pending_deployments"),
     );
 }
 
@@ -101,7 +176,7 @@ afterEach(() => {
   sandbox.remove();
 });
 
-describe("ship-it-ci-watch.mjs on a pull request", () => {
+describe("ship-it-ci-watch.ts on a pull request", () => {
   test("waits for the required check to register, then for it to pass", async () => {
     writeState({
       rules: [requireContexts("ci-success")],
@@ -117,14 +192,14 @@ describe("ship-it-ci-watch.mjs on a pull request", () => {
 
     const output = await watch();
 
-    assert.equal(output.result, "passed");
-    assert.equal(output.pull_request, 7);
-    assert.equal(output.head, HEAD);
-    assert.deepEqual(output.required, ["ci-success"]);
-    assert.deepEqual(output.watched, ["ci-success"]);
-    assert.deepEqual(output.passed, ["ci-success"]);
-    assert.deepEqual(output.pending, []);
-    assert.deepEqual(output.gates, [
+    expect(output.result).toBe("passed");
+    expect(output.pull_request).toBe(7);
+    expect(output.head).toBe(HEAD);
+    expect(output.required).toEqual(["ci-success"]);
+    expect(output.watched).toEqual(["ci-success"]);
+    expect(output.passed).toEqual(["ci-success"]);
+    expect(output.pending).toEqual([]);
+    expect(output.gates).toEqual([
       {
         run_id: RUN,
         url: `https://github.com/acme/shop/actions/runs/${RUN}`,
@@ -135,7 +210,7 @@ describe("ship-it-ci-watch.mjs on a pull request", () => {
         jobs: ["approve-preview"],
       },
     ]);
-    assert.deepEqual(approvals(), []);
+    expect(approvals()).toEqual([]);
   });
 
   test("keeps waiting for a required check while other checks still run", async () => {
@@ -149,8 +224,8 @@ describe("ship-it-ci-watch.mjs on a pull request", () => {
 
     const output = await watch("7", ["--register", SHORT]);
 
-    assert.equal(output.result, "passed");
-    assert.deepEqual(output.passed, ["ci-success"]);
+    expect(output.result).toBe("passed");
+    expect(output.passed).toEqual(["ci-success"]);
   });
 
   test("reports none when the required check never registers and nothing runs", async () => {
@@ -161,8 +236,8 @@ describe("ship-it-ci-watch.mjs on a pull request", () => {
 
     const output = await watch("7", ["--register", SHORT]);
 
-    assert.equal(output.result, "none");
-    assert.deepEqual(output.missing, ["ci-success"]);
+    expect(output.result).toBe("none");
+    expect(output.missing).toEqual(["ci-success"]);
   });
 
   test("reports a required check that failed before the others register", async () => {
@@ -173,12 +248,9 @@ describe("ship-it-ci-watch.mjs on a pull request", () => {
 
     const output = await watch();
 
-    assert.equal(output.result, "failed");
-    assert.deepEqual(
-      output.failed.map(({ name }) => name),
-      ["lint"],
-    );
-    assert.deepEqual(output.missing, ["ci-success"]);
+    expect(output.result).toBe("failed");
+    expect(output.failed.map(({ name }) => name)).toEqual(["lint"]);
+    expect(output.missing).toEqual(["ci-success"]);
   });
 
   test("requires the jobs of a required workflow", async () => {
@@ -194,10 +266,10 @@ describe("ship-it-ci-watch.mjs on a pull request", () => {
 
     const output = await watch();
 
-    assert.equal(output.result, "passed");
-    assert.deepEqual(output.required, ["ci-success", SECRET_SCAN]);
-    assert.deepEqual(output.watched, ["ci-success", "gitleaks"]);
-    assert.deepEqual(output.passed, ["ci-success", "gitleaks"]);
+    expect(output.result).toBe("passed");
+    expect(output.required).toEqual(["ci-success", SECRET_SCAN]);
+    expect(output.watched).toEqual(["ci-success", "gitleaks"]);
+    expect(output.passed).toEqual(["ci-success", "gitleaks"]);
   });
 
   test("keeps a required workflow's run until its later jobs register and end", async () => {
@@ -217,8 +289,8 @@ describe("ship-it-ci-watch.mjs on a pull request", () => {
 
     const output = await watch();
 
-    assert.equal(output.result, "passed");
-    assert.deepEqual(output.passed, ["report", "scan"]);
+    expect(output.result).toBe("passed");
+    expect(output.passed).toEqual(["report", "scan"]);
   });
 
   test("keeps same-named jobs of two workflows apart", async () => {
@@ -233,8 +305,8 @@ describe("ship-it-ci-watch.mjs on a pull request", () => {
 
     const output = await watch();
 
-    assert.equal(output.result, "passed");
-    assert.deepEqual(output.passed, ["test", "test"]);
+    expect(output.result).toBe("passed");
+    expect(output.passed).toEqual(["test", "test"]);
   });
 
   test("goes on when a check's run cannot be read", async () => {
@@ -251,8 +323,8 @@ describe("ship-it-ci-watch.mjs on a pull request", () => {
 
     const output = await watch();
 
-    assert.equal(output.result, "passed");
-    assert.deepEqual(output.passed, ["Critical alert SLA gate", "lint"]);
+    expect(output.result).toBe("passed");
+    expect(output.passed).toEqual(["Critical alert SLA gate", "lint"]);
   });
 
   test("matches a required context to the app the rule names", async () => {
@@ -271,8 +343,8 @@ describe("ship-it-ci-watch.mjs on a pull request", () => {
 
     const output = await watch();
 
-    assert.equal(output.result, "passed");
-    assert.deepEqual(output.watched, ["ci-success"]);
+    expect(output.result).toBe("passed");
+    expect(output.watched).toEqual(["ci-success"]);
   });
 
   test("does not take another app's check for a required context", async () => {
@@ -288,8 +360,8 @@ describe("ship-it-ci-watch.mjs on a pull request", () => {
 
     const output = await watch("7", ["--register", SHORT]);
 
-    assert.equal(output.result, "none");
-    assert.deepEqual(output.missing, ["ci-success"]);
+    expect(output.result).toBe("none");
+    expect(output.missing).toEqual(["ci-success"]);
   });
 
   test("watches every check but a review service's and the gated ones when the merge requires none", async () => {
@@ -310,18 +382,18 @@ describe("ship-it-ci-watch.mjs on a pull request", () => {
 
     const output = await watch();
 
-    assert.equal(output.result, "passed");
-    assert.deepEqual(output.required, []);
-    assert.deepEqual(output.watched, ["lint", "test"]);
-    assert.deepEqual(output.gates[0].jobs, ["approve-preview"]);
-    assert.ok(
+    expect(output.result).toBe("passed");
+    expect(output.required).toEqual([]);
+    expect(output.watched).toEqual(["lint", "test"]);
+    expect(output.gates[0]?.jobs).toEqual(["approve-preview"]);
+    expect(
       sandbox
         .ghCalls()
         .some(([, path]) =>
           path?.endsWith("branches/main/protection/required_status_checks"),
         ),
       "classic protection was read",
-    );
+    ).toBe(true);
   });
 
   test("does not wait for a review service's own run", async () => {
@@ -338,9 +410,9 @@ describe("ship-it-ci-watch.mjs on a pull request", () => {
 
     const output = await watch();
 
-    assert.equal(output.result, "passed");
-    assert.deepEqual(output.watched, ["lint"]);
-    assert.deepEqual(output.pending, []);
+    expect(output.result).toBe("passed");
+    expect(output.watched).toEqual(["lint"]);
+    expect(output.pending).toEqual([]);
   });
 
   test("holds for a gate when the classic protection cannot be read", async () => {
@@ -354,10 +426,10 @@ describe("ship-it-ci-watch.mjs on a pull request", () => {
 
     const output = await watch();
 
-    assert.equal(output.result, "gated");
-    assert.equal(output.requirements_known, false);
-    assert.deepEqual(output.required, []);
-    assert.equal(output.gates[0].can_approve, true);
+    expect(output.result).toBe("gated");
+    expect(output.requirements_known).toBe(false);
+    expect(output.required).toEqual([]);
+    expect(output.gates[0]?.can_approve).toBe(true);
   });
 
   test("does not let a review service's check alone count as registered", async () => {
@@ -373,8 +445,8 @@ describe("ship-it-ci-watch.mjs on a pull request", () => {
 
     const output = await watch();
 
-    assert.equal(output.result, "passed");
-    assert.deepEqual(output.watched, ["lint"]);
+    expect(output.result).toBe("passed");
+    expect(output.watched).toEqual(["lint"]);
   });
 
   test("ends as failed when a watched check fails, without waiting for the rest", async () => {
@@ -387,8 +459,8 @@ describe("ship-it-ci-watch.mjs on a pull request", () => {
 
     const output = await watch();
 
-    assert.equal(output.result, "failed");
-    assert.deepEqual(output.failed, [
+    expect(output.result).toBe("failed");
+    expect(output.failed).toEqual([
       {
         name: "lint",
         conclusion: "failure",
@@ -397,13 +469,12 @@ describe("ship-it-ci-watch.mjs on a pull request", () => {
         job_id: 1,
       },
     ]);
-    assert.deepEqual(
+    expect(
       output.pending.map(({ name, status }) => ({ name, status })),
-      [
-        { name: "test", status: "in_progress" },
-        { name: ".github/workflows/ci.yml", status: "in_progress" },
-      ],
-    );
+    ).toEqual([
+      { name: "test", status: "in_progress" },
+      { name: ".github/workflows/ci.yml", status: "in_progress" },
+    ]);
   });
 
   test("ends as gated when the merge requires the gate itself", async () => {
@@ -414,12 +485,11 @@ describe("ship-it-ci-watch.mjs on a pull request", () => {
 
     const output = await watch();
 
-    assert.equal(output.result, "gated");
-    assert.deepEqual(
+    expect(output.result).toBe("gated");
+    expect(
       output.pending.map(({ name, status }) => ({ name, status })),
-      [{ name: "approve-preview", status: "waiting" }],
-    );
-    assert.equal(output.gates[0].can_approve, true);
+    ).toEqual([{ name: "approve-preview", status: "waiting" }]);
+    expect(output.gates[0]?.can_approve).toBe(true);
   });
 
   test("approves the gates the user can approve with --approve-gates and watches on", async () => {
@@ -433,19 +503,19 @@ describe("ship-it-ci-watch.mjs on a pull request", () => {
 
     const output = await watch("7", ["--approve-gates"]);
 
-    assert.equal(output.result, "passed");
-    assert.deepEqual(output.watched, [
+    expect(output.result).toBe("passed");
+    expect(output.watched).toEqual([
       "approve-preview",
       "deploy-preview",
       "lint",
     ]);
-    assert.deepEqual(output.passed, [
+    expect(output.passed).toEqual([
       "approve-preview",
       "deploy-preview",
       "lint",
     ]);
-    assert.equal(output.gates[0].approved, true);
-    assert.deepEqual(approvals(), [
+    expect(output.gates[0]?.approved).toBe(true);
+    expect(approvals()).toEqual([
       [
         "api",
         "-X",
@@ -474,19 +544,18 @@ describe("ship-it-ci-watch.mjs on a pull request", () => {
 
     const output = await watch("7", ["--approve-gates=staging-review"]);
 
-    assert.equal(output.result, "passed");
-    assert.deepEqual(
+    expect(output.result).toBe("passed");
+    expect(
       output.gates.map(({ environment, approved }) => ({
         environment,
         approved,
       })),
-      [
-        { environment: "staging-review", approved: true },
-        { environment: "production", approved: false },
-      ],
-    );
-    assert.equal(approvals().length, 1);
-    assert.ok(approvals()[0].includes("environment_ids[]=42"));
+    ).toEqual([
+      { environment: "staging-review", approved: true },
+      { environment: "production", approved: false },
+    ]);
+    expect(approvals().length).toBe(1);
+    expect(approvals()[0]?.includes("environment_ids[]=42")).toBe(true);
   });
 
   test("approves a gate that holds a required job before giving up on it", async () => {
@@ -500,9 +569,9 @@ describe("ship-it-ci-watch.mjs on a pull request", () => {
 
     const output = await watch("7", ["--approve-gates", "--register", SHORT]);
 
-    assert.equal(output.result, "passed");
-    assert.deepEqual(output.passed, ["deploy-preview"]);
-    assert.equal(output.gates[0].approved, true);
+    expect(output.result).toBe("passed");
+    expect(output.passed).toEqual(["deploy-preview"]);
+    expect(output.gates[0]?.approved).toBe(true);
   });
 
   test("leaves a gate the user cannot approve", async () => {
@@ -517,23 +586,22 @@ describe("ship-it-ci-watch.mjs on a pull request", () => {
 
     const output = await watch("7", ["--approve-gates"]);
 
-    assert.equal(output.result, "passed");
-    assert.equal(output.gates[0].can_approve, false);
-    assert.equal(output.gates[0].approved, false);
-    assert.deepEqual(approvals(), []);
+    expect(output.result).toBe("passed");
+    expect(output.gates[0]?.can_approve).toBe(false);
+    expect(output.gates[0]?.approved).toBe(false);
+    expect(approvals()).toEqual([]);
   });
 
   test("refuses --approve-gates with an empty list", async () => {
     writeState();
 
-    const result = await sandbox.runScript("ship-it-ci-watch.mjs", [
+    const result = await sandbox.runScript("ship-it-ci-watch.ts", [
       "7",
       "--approve-gates=,",
     ]);
 
-    assert.equal(result.code, 1);
-    assert.match(
-      result.stderr,
+    expect(result.code).toBe(1);
+    expect(result.stderr).toMatch(
       /--approve-gates option needs environment names/,
     );
   });
@@ -544,7 +612,6 @@ describe("ship-it-ci-watch.mjs on a pull request", () => {
         check("lint", { completesAtPoll: 1 }),
         gate("approve-preview"),
         check("test", {
-          status: undefined,
           appearsAtPoll: 1,
           completesAtPoll: 4,
           queuedUntil: 3,
@@ -554,9 +621,9 @@ describe("ship-it-ci-watch.mjs on a pull request", () => {
 
     const output = await watch();
 
-    assert.equal(output.result, "passed");
-    assert.deepEqual(output.passed, ["lint", "test"]);
-    assert.deepEqual(output.gates[0].jobs, ["approve-preview"]);
+    expect(output.result).toBe("passed");
+    expect(output.passed).toEqual(["lint", "test"]);
+    expect(output.gates[0]?.jobs).toEqual(["approve-preview"]);
   });
 
   test("matches a required workflow whose run names its path with a ref", async () => {
@@ -571,9 +638,9 @@ describe("ship-it-ci-watch.mjs on a pull request", () => {
 
     const output = await watch();
 
-    assert.equal(output.result, "passed");
-    assert.deepEqual(output.required, [SECRET_SCAN]);
-    assert.deepEqual(output.passed, ["gitleaks"]);
+    expect(output.result).toBe("passed");
+    expect(output.required).toEqual([SECRET_SCAN]);
+    expect(output.passed).toEqual(["gitleaks"]);
   });
 
   test("keeps a refused approval on the gate and reports the watch", async () => {
@@ -587,10 +654,10 @@ describe("ship-it-ci-watch.mjs on a pull request", () => {
 
     const output = await watch("7", ["--approve-gates"]);
 
-    assert.equal(output.result, "passed");
-    assert.equal(output.gates[0].approved, false);
-    assert.match(output.gates[0].approval_error, /refused the approval/);
-    assert.equal(approvals().length, 1);
+    expect(output.result).toBe("passed");
+    expect(output.gates[0]?.approved).toBe(false);
+    expect(output.gates[0]?.approval_error).toMatch(/refused the approval/);
+    expect(approvals().length).toBe(1);
   });
 
   test("waits through an environment's timer, which ends on its own", async () => {
@@ -611,9 +678,9 @@ describe("ship-it-ci-watch.mjs on a pull request", () => {
 
     const output = await watch();
 
-    assert.equal(output.result, "passed");
-    assert.deepEqual(output.watched, ["deploy-wait", "lint"]);
-    assert.deepEqual(output.gates, []);
+    expect(output.result).toBe("passed");
+    expect(output.watched).toEqual(["deploy-wait", "lint"]);
+    expect(output.gates).toEqual([]);
   });
 
   test("reports a timeout with the pending checks", async () => {
@@ -621,14 +688,13 @@ describe("ship-it-ci-watch.mjs on a pull request", () => {
 
     const output = await watch("7", ["--timeout", SHORT]);
 
-    assert.equal(output.result, "timeout");
-    assert.deepEqual(
+    expect(output.result).toBe("timeout");
+    expect(
       output.pending.map(({ name, status }) => ({ name, status })),
-      [
-        { name: "lint", status: "in_progress" },
-        { name: ".github/workflows/ci.yml", status: "in_progress" },
-      ],
-    );
+    ).toEqual([
+      { name: "lint", status: "in_progress" },
+      { name: ".github/workflows/ci.yml", status: "in_progress" },
+    ]);
   });
 
   test("stops when the head moves", async () => {
@@ -647,9 +713,9 @@ describe("ship-it-ci-watch.mjs on a pull request", () => {
 
     const output = await watch();
 
-    assert.equal(output.result, "superseded");
-    assert.equal(output.head, HEAD);
-    assert.equal(output.head_moved_to, OTHER_HEAD);
+    expect(output.result).toBe("superseded");
+    expect(output.head).toBe(HEAD);
+    expect(output.head_moved_to).toBe(OTHER_HEAD);
   });
 
   test("stops when the pull request closes", async () => {
@@ -667,8 +733,8 @@ describe("ship-it-ci-watch.mjs on a pull request", () => {
 
     const output = await watch();
 
-    assert.equal(output.result, "closed");
-    assert.match(output.reason, /merged/);
+    expect(output.result).toBe("closed");
+    expect(output.reason).toMatch(/merged/);
   });
 
   test("reads the required contexts from classic protection, each once", async () => {
@@ -686,9 +752,9 @@ describe("ship-it-ci-watch.mjs on a pull request", () => {
 
     const output = await watch();
 
-    assert.equal(output.result, "passed");
-    assert.deepEqual(output.required, ["ci"]);
-    assert.deepEqual(output.watched, ["ci"]);
+    expect(output.result).toBe("passed");
+    expect(output.required).toEqual(["ci"]);
+    expect(output.watched).toEqual(["ci"]);
   });
 
   test("counts a commit status among the checks", async () => {
@@ -706,8 +772,8 @@ describe("ship-it-ci-watch.mjs on a pull request", () => {
 
     const output = await watch();
 
-    assert.equal(output.result, "passed");
-    assert.deepEqual(output.passed, ["coverage/coveralls"]);
+    expect(output.result).toBe("passed");
+    expect(output.passed).toEqual(["coverage/coveralls"]);
   });
 
   test("keeps a check run and a commit status of the same name apart", async () => {
@@ -719,9 +785,9 @@ describe("ship-it-ci-watch.mjs on a pull request", () => {
 
     const output = await watch();
 
-    assert.equal(output.result, "failed");
-    assert.deepEqual(output.passed, ["ci"]);
-    assert.equal(output.failed[0].name, "ci");
+    expect(output.result).toBe("failed");
+    expect(output.passed).toEqual(["ci"]);
+    expect(output.failed[0]?.name).toBe("ci");
   });
 
   test("keeps the newest check run per name", async () => {
@@ -734,8 +800,8 @@ describe("ship-it-ci-watch.mjs on a pull request", () => {
 
     const output = await watch();
 
-    assert.equal(output.result, "passed");
-    assert.deepEqual(output.passed, ["lint"]);
+    expect(output.result).toBe("passed");
+    expect(output.passed).toEqual(["lint"]);
   });
 
   test("takes the repository and number from a pull request URL, through the REST API only", async () => {
@@ -743,16 +809,14 @@ describe("ship-it-ci-watch.mjs on a pull request", () => {
 
     const output = await watch("https://github.com/acme/shop/pull/7");
 
-    assert.equal(output.repository, "acme/shop");
-    assert.equal(output.result, "passed");
-    assert.deepEqual(
-      [...new Set(sandbox.ghCalls().map(([command]) => command))],
+    expect(output.repository).toBe("acme/shop");
+    expect(output.result).toBe("passed");
+    expect([...new Set(sandbox.ghCalls().map(([command]) => command))]).toEqual(
       ["api"],
     );
-    assert.equal(
+    expect(
       sandbox.ghCalls().some((call) => call.includes("repos/{owner}/{repo}")),
-      false,
-    );
+    ).toBe(false);
   });
 
   test("refuses a closed pull request", async () => {
@@ -760,26 +824,25 @@ describe("ship-it-ci-watch.mjs on a pull request", () => {
       pr: { number: 7, state: "MERGED", headRefOid: HEAD, labels: [] },
     });
 
-    const result = await sandbox.runScript("ship-it-ci-watch.mjs", ["7"]);
+    const result = await sandbox.runScript("ship-it-ci-watch.ts", ["7"]);
 
-    assert.equal(result.code, 1);
-    assert.match(result.stderr, /Pull request #7 on acme\/shop is merged/);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toMatch(/Pull request #7 on acme\/shop is merged/);
   });
 
   test("refuses a target that is neither a pull request nor a commit", async () => {
     writeState();
 
-    const result = await sandbox.runScript("ship-it-ci-watch.mjs", ["main"]);
+    const result = await sandbox.runScript("ship-it-ci-watch.ts", ["main"]);
 
-    assert.equal(result.code, 1);
-    assert.match(
-      result.stderr,
+    expect(result.code).toBe(1);
+    expect(result.stderr).toMatch(
       /must be a number or a github.com pull request URL/,
     );
   });
 });
 
-describe("ship-it-ci-watch.mjs on a commit", () => {
+describe("ship-it-ci-watch.ts on a commit", () => {
   test("ends as gated when a run waits for a reviewer", async () => {
     writeState({
       checkRuns: [
@@ -793,19 +856,17 @@ describe("ship-it-ci-watch.mjs on a commit", () => {
 
     const output = await watch(HEAD);
 
-    assert.equal(output.result, "gated");
-    assert.equal(output.commit, HEAD);
-    assert.equal(output.pull_request, undefined);
-    assert.deepEqual(output.watched, ["approve-production", "test"]);
-    assert.deepEqual(
+    expect(output.result).toBe("gated");
+    expect(output.commit).toBe(HEAD);
+    expect(output.pull_request).toBe(undefined);
+    expect(output.watched).toEqual(["approve-production", "test"]);
+    expect(
       output.pending.map(({ name, status }) => ({ name, status })),
-      [{ name: "approve-production", status: "waiting" }],
-    );
-    assert.equal(output.gates[0].environment, "production");
-    assert.equal(
+    ).toEqual([{ name: "approve-production", status: "waiting" }]);
+    expect(output.gates[0]?.environment).toBe("production");
+    expect(
       sandbox.ghCalls().some(([, path]) => path?.includes("/pulls/")),
-      false,
-    );
+    ).toBe(false);
   });
 
   test("approves the gate with --approve-gates and watches the deploy to its end", async () => {
@@ -821,14 +882,14 @@ describe("ship-it-ci-watch.mjs on a commit", () => {
 
     const output = await watch(HEAD, ["--approve-gates"]);
 
-    assert.equal(output.result, "passed");
-    assert.deepEqual(output.passed, [
+    expect(output.result).toBe("passed");
+    expect(output.passed).toEqual([
       "approve-production",
       "deploy-production",
       "test",
     ]);
-    assert.equal(output.gates[0].approved, true);
-    assert.match(approvals()[0].at(-1), new RegExp(`for ${HEAD}$`));
+    expect(output.gates[0]?.approved).toBe(true);
+    expect(approvals()[0]?.at(-1)).toMatch(new RegExp(`for ${HEAD}$`));
   });
 
   test("waits for a run's later jobs to register before it passes", async () => {
@@ -841,8 +902,8 @@ describe("ship-it-ci-watch.mjs on a commit", () => {
 
     const output = await watch(HEAD);
 
-    assert.equal(output.result, "passed");
-    assert.deepEqual(output.passed, ["build", "deploy"]);
+    expect(output.result).toBe("passed");
+    expect(output.passed).toEqual(["build", "deploy"]);
   });
 
   test("waits for a run that exists before its first job registers", async () => {
@@ -860,8 +921,8 @@ describe("ship-it-ci-watch.mjs on a commit", () => {
 
     const output = await watch(HEAD);
 
-    assert.equal(output.result, "passed");
-    assert.deepEqual(output.passed, ["build", "deploy"]);
+    expect(output.result).toBe("passed");
+    expect(output.passed).toEqual(["build", "deploy"]);
   });
 
   test("ends a commit's watch as gated when the approval is refused", async () => {
@@ -877,8 +938,8 @@ describe("ship-it-ci-watch.mjs on a commit", () => {
 
     const output = await watch(HEAD, ["--approve-gates"]);
 
-    assert.equal(output.result, "gated");
-    assert.match(output.gates[0].approval_error, /refused the approval/);
+    expect(output.result).toBe("gated");
+    expect(output.gates[0]?.approval_error).toMatch(/refused the approval/);
   });
 
   test("does not count a failed run a newer run of the workflow replaced", async () => {
@@ -892,9 +953,9 @@ describe("ship-it-ci-watch.mjs on a commit", () => {
 
     const output = await watch(HEAD);
 
-    assert.equal(output.result, "passed");
-    assert.deepEqual(output.passed, ["test"]);
-    assert.deepEqual(output.failed, []);
+    expect(output.result).toBe("passed");
+    expect(output.passed).toEqual(["test"]);
+    expect(output.failed).toEqual([]);
   });
 
   test("lets a failed review job speak for its run instead of the run's conclusion", async () => {
@@ -910,8 +971,8 @@ describe("ship-it-ci-watch.mjs on a commit", () => {
 
     const output = await watch(HEAD);
 
-    assert.equal(output.result, "passed");
-    assert.deepEqual(output.failed, []);
+    expect(output.result).toBe("passed");
+    expect(output.failed).toEqual([]);
   });
 
   test("waits for a rerun run's jobs instead of counting its old failure", async () => {
@@ -922,8 +983,8 @@ describe("ship-it-ci-watch.mjs on a commit", () => {
 
     const output = await watch(HEAD);
 
-    assert.equal(output.result, "passed");
-    assert.deepEqual(output.passed, ["test"]);
+    expect(output.result).toBe("passed");
+    expect(output.passed).toEqual(["test"]);
   });
 
   test("reports a run that failed after its jobs passed", async () => {
@@ -934,12 +995,11 @@ describe("ship-it-ci-watch.mjs on a commit", () => {
 
     const output = await watch(HEAD);
 
-    assert.equal(output.result, "failed");
-    assert.deepEqual(output.passed, ["setup"]);
-    assert.deepEqual(
+    expect(output.result).toBe("failed");
+    expect(output.passed).toEqual(["setup"]);
+    expect(
       output.failed.map(({ name, conclusion }) => ({ name, conclusion })),
-      [{ name: ".github/workflows/ci.yml", conclusion: "failure" }],
-    );
+    ).toEqual([{ name: ".github/workflows/ci.yml", conclusion: "failure" }]);
   });
 
   test("reports a run that failed before any job ran", async () => {
@@ -955,8 +1015,8 @@ describe("ship-it-ci-watch.mjs on a commit", () => {
 
     const output = await watch(HEAD);
 
-    assert.equal(output.result, "failed");
-    assert.deepEqual(output.failed, [
+    expect(output.result).toBe("failed");
+    expect(output.failed).toEqual([
       {
         name: ".github/workflows/deploy.yml",
         conclusion: "startup_failure",
@@ -972,7 +1032,7 @@ describe("ship-it-ci-watch.mjs on a commit", () => {
 
     const output = await watch(HEAD, ["--register", SHORT]);
 
-    assert.equal(output.result, "none");
-    assert.deepEqual(output.watched, []);
+    expect(output.result).toBe("none");
+    expect(output.watched).toEqual([]);
   });
 });

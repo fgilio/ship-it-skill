@@ -1,19 +1,20 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // Lists the review labels a repository offers, by focus.
 
 import {
   FOCUS_ORDER,
   ScriptError,
-  ghList,
+  ghRecords,
   main,
   parseArguments,
   parseFocus,
   parseReviewLabel,
   printJson,
   resolveRepository,
-} from "./lib.mjs";
+  stringOrNull,
+} from "./lib";
 
-const USAGE = `Usage: ship-it-review-list.mjs [--repo owner/name]
+const USAGE = `Usage: ship-it-review-list.ts [--repo owner/name]
 
 Lists, as JSON, every label of the repository that requests a review from
 a review service (\`<service>-review:<kind>\`) and whose description tags
@@ -24,7 +25,7 @@ Options:
   --repo owner/name   The repository (default: the current directory's)
 `;
 
-main(async () => {
+await main(async () => {
   const { flags, positionals } = parseArguments(process.argv.slice(2), {
     usage: USAGE,
     valueFlags: ["repo"],
@@ -32,22 +33,23 @@ main(async () => {
 
   if (positionals.length > 0) {
     throw new ScriptError(
-      `ship-it-review-list.mjs takes no arguments.\n\n${USAGE}`,
+      `ship-it-review-list.ts takes no arguments.\n\n${USAGE}`,
     );
   }
 
   const repository = resolveRepository(flags.repo);
-  const labels = ghList(`repos/${repository}/labels?per_page=100`);
 
-  const reviewLabels = labels
-    .map(({ name, description }) => ({
-      label: name,
-      ...parseReviewLabel(name),
-      focus: parseFocus(description),
-    }))
-    .filter((label) => label.service && label.focus)
-    .map(({ label, service, kind, focus }) => ({ label, service, kind, focus }))
-    .sort(
+  const reviewLabels = ghRecords(`repos/${repository}/labels?per_page=100`)
+    .flatMap(({ name, description }) => {
+      const label = String(name);
+      const parsed = parseReviewLabel(label);
+      const focus = parseFocus(stringOrNull(description));
+
+      return parsed && focus
+        ? [{ label, service: parsed.service, kind: parsed.kind, focus }]
+        : [];
+    })
+    .toSorted(
       (a, b) =>
         FOCUS_ORDER.indexOf(a.focus) - FOCUS_ORDER.indexOf(b.focus) ||
         a.label.localeCompare(b.label),

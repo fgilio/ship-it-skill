@@ -1,0 +1,6 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema-jsonc.json",
+  // The skills run each script by its path, and the tests copy the fake gh
+  // onto PATH, so no file imports them.
+  "entry": ["scripts/ship-it-*.ts", "test/fixtures/fake-gh.ts"],
+}
