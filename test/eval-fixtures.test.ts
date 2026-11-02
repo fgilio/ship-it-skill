@@ -416,7 +416,7 @@ describe("the land eval workspace", () => {
     expect(remoteMainMatchesGrader()).toBe(true);
   });
 
-  test("pushes the same main under a global config with a hook template", () => {
+  test("pushes the same main under a global or environment config with a hook template", () => {
     const configDirectory = mkdtempSync(
       join(tmpdir(), "ship-it-git-template-"),
     );
@@ -438,6 +438,9 @@ describe("the land eval workspace", () => {
         ...process.env,
         PATH: `.fake-bin:${process.env.PATH}`,
         GIT_CONFIG_GLOBAL: globalConfig,
+        GIT_CONFIG_COUNT: "1",
+        GIT_CONFIG_KEY_0: "init.templateDir",
+        GIT_CONFIG_VALUE_0: join(configDirectory, "template"),
       },
     });
 

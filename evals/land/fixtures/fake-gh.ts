@@ -141,6 +141,7 @@ function git(gitArgs: string[]): string {
       ...process.env,
       GIT_CONFIG_GLOBAL: "/dev/null",
       GIT_CONFIG_NOSYSTEM: "1",
+      GIT_CONFIG_COUNT: "0",
     },
   });
 

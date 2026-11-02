@@ -47,6 +47,11 @@ const PDF_PR = {
   title: "Add the PDF download format",
   depends_on: [{ title: "Log invoice downloads", needs: "evidence" }],
 };
+// The PDF PR with its evidence dependency on the PR titled `title`.
+const dependsOn = (title: string) => ({
+  ...PDF_PR,
+  depends_on: [{ title, needs: "evidence" }],
+});
 const run = (
   needs: string,
   mode = "merge-ready",
@@ -82,6 +87,17 @@ describe("run-file", () => {
       toolCall("Write", {
         file_path: RUN_FILE,
         content: run("evidence", "merge-ready", prs),
+      }),
+    );
+
+  const titled = (title: string, dependency = title) =>
+    writesRunFile([{ ...LOG_PR, title }, dependsOn(dependency)]);
+  // A Python script that writes the run file, each title a string literal
+  // with its own quotes.
+  const pythonTitled = (title: string, dependency: string) =>
+    pattern.test(
+      toolCall("Bash", {
+        command: `python3 - <<'EOF'\nimport json, os\njson.dump({'mode': 'merge-ready', 'prs': [{'title': ${title}, 'depends_on': []}, {'title': 'Add the PDF download format', 'depends_on': [{'title': ${dependency}, 'needs': 'evidence'}]}]}, open(os.path.expanduser('~/.claude/ship-it/runs/acme-books/invoices/pdf.json'), 'w'))\nEOF`,
       }),
     );
 
@@ -202,6 +218,63 @@ describe("run-file", () => {
       ]),
     ).toBe(false);
     expect(writesRunFile([PDF_PR])).toBe(false);
+  });
+
+  test("ties the PDF PR's dependency to the log PR by its exact title, in either order", () => {
+    expect(writesRunFile([LOG_PR, dependsOn(LOG_PR.title)])).toBe(true);
+    expect(writesRunFile([dependsOn(LOG_PR.title), LOG_PR])).toBe(true);
+    expect(writesRunFile([LOG_PR, dependsOn("Set up the audit log")])).toBe(
+      false,
+    );
+    expect(writesRunFile([dependsOn("Set up the audit log"), LOG_PR])).toBe(
+      false,
+    );
+    expect(writesRunFile([LOG_PR, dependsOn("Log invoice downloads v2")])).toBe(
+      false,
+    );
+    expect(writesRunFile([LOG_PR, dependsOn("Log invoice")])).toBe(false);
+  });
+
+  test("captures a title with quotes, an apostrophe or a backslash whole, in either quote style", () => {
+    expect(titled('Log invoice downloads to "downloads.jsonl"')).toBe(true);
+    expect(
+      titled(
+        'Log invoice downloads to "downloads.jsonl"',
+        'Log invoice downloads to "other.jsonl"',
+      ),
+    ).toBe(false);
+    expect(titled("Log the reader's invoice downloads")).toBe(true);
+    expect(
+      titled(
+        "Log the reader's invoice downloads",
+        "Log the reader's invoice exports",
+      ),
+    ).toBe(false);
+    expect(titled(String.raw`Log invoice downloads under logs\invoices`)).toBe(
+      true,
+    );
+    expect(
+      pythonTitled(
+        `'Log invoice downloads to "downloads.jsonl"'`,
+        `'Log invoice downloads to "downloads.jsonl"'`,
+      ),
+    ).toBe(true);
+    expect(
+      pythonTitled(
+        `'Log invoice downloads to "downloads.jsonl"'`,
+        `'Log invoice downloads to "other.jsonl"'`,
+      ),
+    ).toBe(false);
+    expect(
+      pythonTitled(`'Log invoice downloads'`, `"Log invoice downloads"`),
+    ).toBe(true);
+    expect(
+      pythonTitled(`"Log invoice downloads"`, `'Log invoice downloads'`),
+    ).toBe(true);
+    expect(pythonTitled(`'Log invoice downloads'`, `"Log invoice"`)).toBe(
+      false,
+    );
+    expect(titled('Log the "PDF" downloads')).toBe(false);
   });
 
   test("rejects a chain on code, another mode, another path, a print, and the skill text", () => {

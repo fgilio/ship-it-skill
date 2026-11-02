@@ -13,10 +13,12 @@
 #   holds is set here.
 set -euo pipefail
 
-# The operator's global and system git config never reach the fixture: a
-# template directory with hooks, a default branch, signing or line-ending
-# settings there would change main's SHA or refuse the push.
-export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+# The operator's global and system git config, and config passed in the
+# environment (GIT_CONFIG_COUNT with GIT_CONFIG_KEY_n and GIT_CONFIG_VALUE_n),
+# never reach the fixture: a template directory with hooks, a default
+# branch, signing or line-ending settings there would change main's SHA or
+# refuse the push.
+export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_COUNT=0
 
 case ":$PATH:" in
   *":.fake-bin:"*) ;;
@@ -50,8 +52,8 @@ bun_binary="$(command -v bun)"
 
 mkdir -p .fake-bin
 # The session's git, the fake gh's and the bun wrapper's skip the
-# operator's global and system config too.
-printf '#!/bin/sh\nGIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 exec "%s" "$@"\n' "$git_binary" > .fake-bin/git
+# operator's global, system and environment config too.
+printf '#!/bin/sh\nGIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_COUNT=0 exec "%s" "$@"\n' "$git_binary" > .fake-bin/git
 cp "$fixtures/fake-gh.ts" .fake-bin/gh
 
 # Logs each `bun test` run to the gh call log, in order with the gh calls,
