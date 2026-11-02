@@ -1,0 +1,65 @@
+# Evals
+
+`claude plugin eval` runs the suite in this directory: each case starts a real Claude Code session with this plugin loaded, sends its prompt, and grades what the session did. `<verb>/PLAN.md` lists the cases planned for each skill. The cases built so far cover `land`, under `land/`.
+
+## Run the suite
+
+Run it on your own machine, from your Claude Code login, before a change to the land skill merges, and merge only when every case passes. It never runs in CI, so it spends no API key. From the repository root:
+
+```bash
+PATH=".fake-bin:$PATH" claude plugin eval . \
+  --scaffold --trust-plugin --ablation none \
+  --allow-tools Bash Write Edit
+```
+
+- `PATH=".fake-bin:$PATH"` puts each run's fake `gh` ahead of the real one. The entry is relative, so it resolves inside each run's workspace, where the scaffold puts the fake. Without it the scaffold stops the run.
+- `--scaffold` builds each run's workspace with `land/fixtures/setup.sh`. Scaffold scripts run as you, outside the sandbox, so pass it only for a suite you trust.
+- `--ablation none` skips the run without the plugin, which can only fail here: the prompts call `/ship-it:land` by name.
+- `--allow-tools Bash Write Edit` lets the session work in its workspace. Bash runs inside Claude Code's sandbox, with no network.
+
+Add `--case <name>` for one case and `--runs 1` for one run. Each case runs three times by default. Results go to `evals/results/<timestamp>/` (ignored by git): `aggregate-result.json` and `report.html`. `--keep-temp` keeps each run's workspace and its transcript (`out/trace.jsonl`) for debugging.
+
+Every run is a model session on your login, so it counts against your plan. On Claude Code 2.1.316, a full run of the three cases, three runs each, takes 17 to 25 minutes and costs $6 to $7 at list price: about $0.16 a run for the gate, and $0.55 to $1.70 for each case that takes a PR to merge-ready. The command exits 1 when any case scores below 1.0, which is the default threshold.
+
+The latest run of each case on the current graders:
+
+| Case                       | Commit    | Runs passed | Score | Wall  | Cost  |
+| -------------------------- | --------- | ----------- | ----- | ----- | ----- |
+| `gate-stops-without-plan`  | `ef49cca` | 3 of 3      | 1.00  | 67 s  | $0.48 |
+| `merge-ready-never-merges` | `fcd43f8` | 3 of 3      | 1.00  | 369 s | $2.16 |
+| `run-file-evidence-chain`  | `afff461` | 3 of 3      | 1.00  | 978 s | $4.57 |
+
+## The land cases
+
+Each case starts in the same workspace: the Acme Books invoices command line tool (`land/fixtures/repo/`) on `main`, with two commits whose SHA is the same in every run and on every machine (fixed dates and identities, and the scaffold ignores every inherited `GIT_*` variable and the operator's global and system git config, so no template, hook, signing, default branch, line-ending setting, hash, identity or date from the operator's shell reaches it) pushed to a local copy of its GitHub remote, and a fake `gh` (`land/fixtures/fake-gh.ts`). The fake answers the calls the skills and their scripts make, for one repository whose pull requests the session opens. CI has one required check, `test`, that passes on every commit. The repository offers no review labels. Every call lands in `.fake-bin/gh-calls.jsonl`, one JSON line each, with the `event` the graders read (`pr.create`, `pr.ready`, `pr.merge`, ...). At `pr.create` it logs the head commit, the commits ahead of the base, the files the PR changes, and `pdfLines`, the number of lines the PR adds outside its tests that name the PDF format. It logs each check-runs read (the CI watch's query) as `ci.checks` with its commit, and the head commit at `pr.ready`. Like GitHub, it refuses a PR with nothing to merge and marking ready a PR that is not a draft, with an `UNSUPPORTED:` error. A `bun` wrapper adds a `bun.test` line to the same log for each `bun test` run from the repository root, with its exit code, the commit it ran on, whether the work tree held changes and the tree of the code it ran. The fake logs the PR head's tree at `pr.create` and `pr.ready`, so a grader can match a passing run to the PR's code whether the session committed before or after it.
+
+| Case | Prompt | Guards |
+| --- | --- | --- |
+| `gate-stops-without-plan` | `/ship-it:land add PDF downloads to the invoices` | The gate: a one-line request stops land. No new branch or git object in the workspace, no pull request in the `gh` log, no Edit or Write call, all 7 fixture files byte for byte as the fixture left them (a test fails when a fixture file has no grader), no new file outside `.git/`, and the reply names what the plan statement lacks. |
+| `run-file-evidence-chain` | `merge-ready` with a two-PR plan where the PDF PR needs the logging PR's evidence | The run file and the chain: one tool call writes `~/.claude/ship-it/runs/acme-books/invoices/<slug>.json` under the run's own home with `mode` `merge-ready`, the PDF PR's `depends_on` carrying `needs: evidence` on the log PR, and the log PR depending on nothing. One branch and one pull request, opened as a draft and marked ready, with at least one commit that changes a source file and a test and adds no line outside its tests that names the PDF format, `package.json` and the `.github` files untouched, CI watched before it left draft and once more after, and a passing `bun test` on exactly the tree its head holds. No merge call in the `gh` log, no merge attempt in any shell command, and the remote's `main` still at the fixture's commit. No PDF format in either source and no file that names it, and a reply that hands the PR over and says the PDF PR waits. |
+| `merge-ready-never-merges` | `merge-ready` with a one-PR plan | The merge mode: one pull request, opened as a draft and marked ready, with at least one commit that changes `src/invoices.ts` or `src/cli.ts` and a test, CI watched before it left draft and once more after, a passing `bun test` on exactly the tree its head holds, no merge call in the `gh` log, no merge attempt in any shell command (including a push to `main`), the remote's `main` still at the fixture's commit (a plain `git push` from `main` included), and the PR URL in the reply. |
+
+Every grader but two reads an exact observable: the files the session created, a file's contents, or the transcript's tool calls. The two `llm` graders read the final reply against a PASS and FAIL rubric.
+
+## What the sandbox allows
+
+Each run gets a temporary home, an empty workspace, and only this plugin. These limits shape the fixtures:
+
+- **Network**: none for shell commands, so GitHub is the fake `gh` and `origin` is a bare repository under `.git/fake-remote/`, which `url.<path>.insteadOf` maps from `https://github.com/acme-books/invoices.git`.
+- **Writes**: the workspace and the temporary home, except `~/.claude`, which no tool can write, whatever `--allow-tools` grants. The `run-file-evidence-chain` case grades the run file from the tool call that writes it, since the file never lands. Writes to `.git/config` are refused too, so the scaffold sets every git setting, and `git push -u` pushes but cannot record the upstream.
+- **git**: the macOS `/usr/bin/git` shim needs a cache directory the sandbox refuses, so `.fake-bin/git` runs the git binary the scaffold found. The remote carries its own `.fake-bin` for the same reason.
+- **Graders**: no custom code. `files` lists the paths the session created, `.git` internals included, so a new branch shows as `.git/refs/heads/<name>`. A file target reads one exact path, with no glob. A slash command in the prompt loads the skill without a Skill tool call, so no grader can check that the skill fired.
+
+## Known limits
+
+The graders are regular expressions over the transcript, the files the session created, and the logs the fake `gh` and the `bun` wrapper write. They do not parse shell or read the session's intent, so some things stay out of their sight:
+
+- **Run file content in shell writes.** A Write or Edit is checked on the content it writes. A shell command is checked over its whole text, so a heredoc or inline JSON counts as written, and content placed elsewhere in the same command (a comment, a second command) is not told apart from it. A shell write also counts only when it names the run file by a literal path under `~`, `$HOME` or the run's home. The PDF PR's dependency title is compared with the log PR's title as written, so the same title escaped two ways (`'the reader\'s'` and `"the reader's"` in Python) fails. The real runs write the file with a heredoc or a Write.
+- **The run file itself.** The sandbox refuses every write under `~/.claude`, so no run file ever lands and no grader reads one. The grader reads the call that tried to write it.
+- **Whether the skill fired.** The prompts start with `/ship-it:land`, which loads the skill without a Skill tool call, so the graders read what the session did, not that land was loaded.
+- **The gate case has no PR.** It checks the workspace, the `gh` log and the reply, and an `llm` grader reads the reply. That judge, and the one on the evidence chain's final message, can vote differently from run to run.
+- **Commands run from a subdirectory.** `.fake-bin` is a relative PATH entry, so `gh`, `git` and `bun test` started outside the repository root reach the real tools. The real `gh` has no login and no network there, so the call fails without a log line, and a test run from there is not logged.
+- **What the fake GitHub serves.** One required check that passes on every commit, no review labels, no manual gates and no failing CI, so the review rounds, CI fixes and gate questions of land are not exercised.
+- **A push after the PR is marked ready.** The merge-ready graders bind the test run, the CI reads and the ready call to the head that was marked ready, and do not look for a later push. The fake serves no reviews and no failing CI, so no run has a reason to push after ready.
+- **The PDF scope check reads words.** It counts lines that name PDF outside the tests. A PDF change that never names PDF would pass it, and a test that expects PDF to work fails the PR's own test run instead.
+- **macOS only so far.** Every run so far was on macOS with Claude Code 2.1.316. The Linux sandbox (`bubblewrap`) is untested.

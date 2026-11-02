@@ -1,6 +1,14 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema-jsonc.json",
-  // The skills run each script by its path, and the tests copy the fake gh
-  // onto PATH, so no file imports them.
-  "entry": ["scripts/ship-it-*.ts", "test/fixtures/fake-gh.ts"],
+  // The skills run each script by its path, the tests copy the fake gh onto
+  // PATH, and the land evals copy their fake gh and the invoices repository
+  // into each run's workspace, so no file imports them.
+  "entry": [
+    "scripts/ship-it-*.ts",
+    "test/fixtures/fake-gh.ts",
+    "evals/land/fixtures/fake-gh.ts",
+    "evals/land/fixtures/repo/src/cli.ts",
+  ],
+  // The eval fake gh answers --jq through the jq binary, as gh does.
+  "ignoreBinaries": ["jq"],
 }

@@ -88,7 +88,7 @@ With [bonsai](https://github.com/publicala/claude-plugins/tree/main/plugins/bons
 - `skills/<verb>/SKILL.md`: one skill per verb
 - `scripts/`: the scripts the skills run, and `skills/review/without-gh.md`: the review scripts' protocol by hand, for sessions without `gh`
 - `references/`: guidance the skills share: GitHub access through `gh` or MCP, commit and push, watching CI, proof, merge modes, escalation
-- `evals/<verb>/PLAN.md`: eval plans per skill
+- `evals/`: the `claude plugin eval` suite for land, with how to run it in [`evals/README.md`](evals/README.md), and the eval plans per skill (`evals/<verb>/PLAN.md`)
 - `test/`: tests for the scripts, against a fake `gh` (`bun test`)
 
 ## Development
