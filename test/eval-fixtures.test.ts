@@ -28,6 +28,9 @@ const mainUnchangedGrader = join(
   "evals/land/run-file-evidence-chain/graders/main-unchanged.md",
 );
 
+// The main every land case starts from, which the remote-main grader names.
+const MAIN_SHA = "65d8829715d36b6d2c16a13d4d75cde484807559";
+
 let workspace: string;
 
 function remoteMainMatchesGrader(): boolean {
@@ -398,90 +401,88 @@ describe("the land eval workspace", () => {
     expect(remoteMainMatchesGrader()).toBe(true);
   });
 
-  test("pushes the same main under another git identity in the environment", () => {
-    const result = spawnSync("bash", [setupScript], {
-      cwd: workspace,
-      encoding: "utf8",
-      env: {
-        ...process.env,
-        PATH: `.fake-bin:${process.env.PATH}`,
-        GIT_AUTHOR_NAME: "Someone Else",
-        GIT_AUTHOR_EMAIL: "someone@example.com",
-        GIT_COMMITTER_NAME: "Someone Else",
-        GIT_COMMITTER_EMAIL: "someone@example.com",
-      },
-    });
-
-    expect(result.status).toBe(0);
-    expect(remoteMainMatchesGrader()).toBe(true);
-  });
-
-  test("pushes the same main under a global or environment config with a hook template", () => {
-    const configDirectory = mkdtempSync(
-      join(tmpdir(), "ship-it-git-template-"),
-    );
-    const hooks = join(configDirectory, "template", "hooks");
+  test("builds the same main whatever GIT_* variables the operator's shell exports", () => {
+    const configDirectory = mkdtempSync(join(tmpdir(), "ship-it-git-env-"));
+    const template = join(configDirectory, "template");
+    const hooks = join(template, "hooks");
     const globalConfig = join(configDirectory, "gitconfig");
 
+    // A template whose hooks refuse every push and change every commit
+    // message, and a global config that also signs, converts line endings
+    // and names another default branch.
     mkdirSync(hooks, { recursive: true });
     writeFileSync(join(hooks, "pre-receive"), "#!/bin/sh\nexit 1\n");
-    chmodSync(join(hooks, "pre-receive"), 0o755);
-    writeFileSync(
-      globalConfig,
-      `[init]\n\ttemplateDir = ${join(configDirectory, "template")}\n\tdefaultBranch = trunk\n[commit]\n\tgpgSign = true\n[gpg]\n\tprogram = false\n`,
-    );
-
-    const result = spawnSync("bash", [setupScript], {
-      cwd: workspace,
-      encoding: "utf8",
-      env: {
-        ...process.env,
-        PATH: `.fake-bin:${process.env.PATH}`,
-        GIT_CONFIG_GLOBAL: globalConfig,
-        GIT_CONFIG_COUNT: "1",
-        GIT_CONFIG_KEY_0: "init.templateDir",
-        GIT_CONFIG_VALUE_0: join(configDirectory, "template"),
-      },
-    });
-
-    rmSync(configDirectory, { recursive: true, force: true });
-
-    expect(result.stderr).toBe("");
-    expect(result.status).toBe(0);
-    expect(remoteMainMatchesGrader()).toBe(true);
-  });
-
-  test("pushes the same main under a git config that signs and hooks commits", () => {
-    const configDirectory = mkdtempSync(join(tmpdir(), "ship-it-git-config-"));
-    const hooks = join(configDirectory, "hooks");
-    const globalConfig = join(configDirectory, "gitconfig");
-
-    mkdirSync(hooks);
     writeFileSync(
       join(hooks, "commit-msg"),
       '#!/bin/sh\necho changed >> "$1"\n',
     );
+    chmodSync(join(hooks, "pre-receive"), 0o755);
     chmodSync(join(hooks, "commit-msg"), 0o755);
     writeFileSync(
       globalConfig,
-      `[commit]\n\tgpgSign = true\n[tag]\n\tgpgSign = true\n[gpg]\n\tprogram = false\n[core]\n\thooksPath = ${hooks}\n\tautocrlf = true\n`,
+      `[init]\n\ttemplateDir = ${template}\n\tdefaultBranch = trunk\n[commit]\n\tgpgSign = true\n[tag]\n\tgpgSign = true\n[gpg]\n\tprogram = false\n[core]\n\thooksPath = ${hooks}\n\tautocrlf = true\n`,
     );
 
-    const result = spawnSync("bash", [setupScript], {
-      cwd: workspace,
-      encoding: "utf8",
-      env: {
-        ...process.env,
-        PATH: `.fake-bin:${process.env.PATH}`,
-        GIT_CONFIG_GLOBAL: globalConfig,
+    const families: Record<string, string>[] = [
+      {
+        GIT_CONFIG_COUNT: "1",
+        GIT_CONFIG_KEY_0: "init.templateDir",
+        GIT_CONFIG_VALUE_0: template,
       },
+      { GIT_CONFIG_PARAMETERS: `'init.templatedir'='${template}'` },
+      { GIT_TEMPLATE_DIR: template },
+      { GIT_DEFAULT_HASH: "sha256" },
+      {
+        GIT_AUTHOR_NAME: "Someone Else",
+        GIT_AUTHOR_EMAIL: "someone@example.com",
+        GIT_AUTHOR_DATE: "2030-01-01T00:00:00Z",
+      },
+      {
+        GIT_COMMITTER_NAME: "Someone Else",
+        GIT_COMMITTER_EMAIL: "someone@example.com",
+        GIT_COMMITTER_DATE: "2030-01-01T00:00:00Z",
+      },
+      { GIT_CONFIG_GLOBAL: globalConfig },
+    ];
+
+    const failures = families.flatMap((variables) => {
+      const directory = mkdtempSync(join(tmpdir(), "ship-it-eval-env-"));
+      const result = spawnSync("bash", [setupScript], {
+        cwd: directory,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          PATH: `.fake-bin:${process.env.PATH}`,
+          ...variables,
+        },
+      });
+      const sha =
+        result.status === 0
+          ? readFileSync(
+              join(
+                directory,
+                ".git/fake-remote/acme-books/invoices.git/refs/heads/main",
+              ),
+              "utf8",
+            ).trim()
+          : `nothing (exit ${result.status}: ${result.stderr.trim()})`;
+
+      rmSync(directory, { recursive: true, force: true });
+
+      const exported = Object.entries(variables)
+        .map(([name, value]) => `${name}=${value}`)
+        .join(" ");
+
+      return sha === MAIN_SHA && result.stderr === ""
+        ? []
+        : [
+            `setup.sh built main at ${sha} with ${exported} exported, not ${MAIN_SHA.slice(0, 7)}${result.status === 0 && result.stderr !== "" ? `, and wrote ${result.stderr.trim()}` : ""}: an inherited GIT_* variable reached the fixture.`,
+          ];
     });
 
     rmSync(configDirectory, { recursive: true, force: true });
 
-    expect(result.stderr).toBe("");
-    expect(result.status).toBe(0);
-    expect(remoteMainMatchesGrader()).toBe(true);
+    expect(failures).toEqual([]);
   });
 
   test("ends a call it cannot lock, instead of waiting for the lock", () => {

@@ -13,11 +13,15 @@
 #   holds is set here.
 set -euo pipefail
 
-# The operator's global and system git config, and config passed in the
-# environment (GIT_CONFIG_COUNT with GIT_CONFIG_KEY_n and GIT_CONFIG_VALUE_n),
-# never reach the fixture: a template directory with hooks, a default
-# branch, signing or line-ending settings there would change main's SHA or
-# refuse the push.
+# Nothing git reads from the operator's shell reaches the fixture: every
+# inherited GIT_* variable is dropped (config passed in the environment, a
+# template directory, another hash, another identity or date), and so is
+# the global and system config. A hook template, a default branch, signing
+# or line-ending settings would change main's SHA or refuse the push. The
+# fixture's own GIT_* variables are set after this.
+while IFS= read -r name; do
+  unset "$name"
+done < <(compgen -e | grep '^GIT_')
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_COUNT=0
 
 case ":$PATH:" in
@@ -106,8 +110,6 @@ git config tag.gpgsign false
 
 # Fixed dates and identities make the fixture's commits, and so main's
 # SHA, the same in every run, so a grader can tell whether main moved.
-# GIT_AUTHOR_* and GIT_COMMITTER_* in the operator's shell would win over
-# the config above, so they are set here too.
 export GIT_AUTHOR_DATE="2026-10-20T09:00:00Z" GIT_COMMITTER_DATE="2026-10-20T09:00:00Z"
 export GIT_AUTHOR_NAME="Acme Developer" GIT_AUTHOR_EMAIL="dev@acme-books.example"
 export GIT_COMMITTER_NAME="Acme Developer" GIT_COMMITTER_EMAIL="dev@acme-books.example"
