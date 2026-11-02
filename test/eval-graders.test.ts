@@ -30,15 +30,30 @@ function grader(path: string): RegExp {
 }
 
 /**
- * One trace line, as the run's transcript writes an assistant tool call.
+ * One trace line, as the run's transcript writes an assistant turn with
+ * these tool calls.
  */
-function toolCall(name: string, input: Record<string, string>): string {
+function toolCalls(
+  ...calls: [name: string, input: Record<string, string>][]
+): string {
   return JSON.stringify({
     type: "assistant",
     message: {
-      content: [{ type: "tool_use", id: "toolu_1", name, input }],
+      content: calls.map(([name, input], index) => ({
+        type: "tool_use",
+        id: `toolu_${index + 1}`,
+        name,
+        input,
+      })),
     },
   });
+}
+
+/**
+ * One trace line, as the run's transcript writes an assistant tool call.
+ */
+function toolCall(name: string, input: Record<string, string>): string {
+  return toolCalls([name, input]);
 }
 
 const RUN_FILE = "/home/.claude/ship-it/runs/acme-books/invoices/pdf.json";
@@ -158,6 +173,71 @@ describe("run-file", () => {
   test("reads what an Edit writes, never what it replaces", () => {
     expect(editsRunFile(run("evidence"), run("code"))).toBe(false);
     expect(editsRunFile(run("code"), run("evidence"))).toBe(true);
+  });
+
+  test("reads the content of the call that writes the run file, not another call in the same turn", () => {
+    const emptyRunFile: [string, Record<string, string>] = [
+      "Write",
+      { file_path: RUN_FILE, content: "" },
+    ];
+    const planElsewhere: [string, Record<string, string>] = [
+      "Write",
+      { file_path: "/tmp/pdf.json", content: run("evidence") },
+    ];
+    const plan: [string, Record<string, string>] = [
+      "Write",
+      { file_path: RUN_FILE, content: run("evidence") },
+    ];
+
+    expect(pattern.test(toolCalls(emptyRunFile, planElsewhere))).toBe(false);
+    expect(pattern.test(toolCalls(planElsewhere, emptyRunFile))).toBe(false);
+    expect(
+      pattern.test(
+        toolCalls(
+          ["Bash", { command: `: > ${RUN_FILE}` }],
+          [
+            "Bash",
+            { command: `cat > /tmp/pdf.json <<'EOF'\n${run("evidence")}\nEOF` },
+          ],
+        ),
+      ),
+    ).toBe(false);
+    expect(pattern.test(toolCalls(planElsewhere, plan))).toBe(true);
+    expect(pattern.test(toolCalls(plan, planElsewhere))).toBe(true);
+  });
+
+  test("reads a run-file write whose content comes before its path", () => {
+    expect(
+      pattern.test(
+        toolCall("Write", { content: run("evidence"), file_path: RUN_FILE }),
+      ),
+    ).toBe(true);
+    expect(
+      pattern.test(
+        toolCall("Edit", {
+          new_string: run("evidence"),
+          old_string: run("code"),
+          file_path: RUN_FILE,
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      pattern.test(
+        toolCall("Edit", {
+          old_string: run("evidence"),
+          new_string: run("code"),
+          file_path: RUN_FILE,
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      pattern.test(
+        toolCalls(
+          ["Write", { content: run("evidence"), file_path: "/tmp/pdf.json" }],
+          ["Write", { content: "", file_path: RUN_FILE }],
+        ),
+      ),
+    ).toBe(false);
   });
 
   test("rejects a write to another file that names the run file", () => {
