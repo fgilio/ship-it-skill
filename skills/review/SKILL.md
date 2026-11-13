@@ -47,7 +47,7 @@ When the output's `head_moved_to` is set, someone pushed during the wait: the po
 ## Steps
 
 1. **The PR.** The PR in `$ARGUMENTS`, or the open PR of the current branch. Its branch has no uncommitted or unpushed changes, and CI is green on its head: the first round waits for that, fixing failures until it is. A review service's own review never holds it, and neither does a manual gate the watch lists (`ci-watch.md`, "Manual gates").
-2. **The labels.** Run the list script. A focus name in `$ARGUMENTS` limits the run to that round. Labels in `$ARGUMENTS` run as one round of their own. An untagged label runs only when `$ARGUMENTS` names it, never as a round of its own making. When the repository offers no tagged label, say so and go to step 5.
+2. **The labels.** Run the list script. A focus name in `$ARGUMENTS` limits the run to that round. Labels in `$ARGUMENTS` run as one round of their own. An untagged label runs only when `$ARGUMENTS` names it, never as a round of its own making. When `$ARGUMENTS` names no label and the repository offers no tagged label, say so and go to step 5.
 3. **Each round, in order.** For a focus with no label, skip the round and say so.
    1. Run the run script with every label of the round.
    2. Address the round: follow `${CLAUDE_SKILL_DIR}/../address/SKILL.md` for this PR, passing `--guard` when `$ARGUMENTS` has it. It covers every unresolved finding on the PR, including reviews nobody requested, such as a bot that reviews every new PR. The artifact is its report, with the behavior line.
