@@ -13,6 +13,8 @@ Fixture: a recorded PR served by a stubbed `gh`: five review threads, one review
 - docs-only fixes → expect "Behavior changed: no"
 - a fix that replaces the approach the description explains → expect the description patched before the replies, describing the new approach once, with no mention of the old one or of the review
 - fixes that change nothing the description states → expect no PATCH of the description
+- a fix that changes one section of a description with a proof and a reading guide → expect the body read first, and the PATCH to carry the other sections unchanged
+- a CI failure whose fix changes a count the description states → expect the description patched again after that push
 - no `--guard` with bonsai installed → expect guard not run
 - `--guard` with bonsai installed → expect guard run once with `--no-reply` before the first decision
 - `--guard` where guard's map names a thread an earlier round resolved → expect a reply there with the guardrail PR, and the thread left resolved, the reply ending with guard's marker line
