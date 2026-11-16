@@ -40,6 +40,7 @@ Both scripts need `gh` logged in as the user, since services refuse labels a bot
 | `refused` | The service said why it did not start | A refusal because the head already has that review counts as posted, and address finds that review on the PR. Any other reason: escalate as can wait. |
 | `unanswered`, `timeout` | No review after the retry | Escalate as can wait, and go on with the next round |
 | `superseded` | The head moved while the review ran | Ask again for the new head, once |
+| `missing` | The repository does not carry the label, so the script never asked for it | Say so |
 | `closed` | The PR closed | Stop |
 
 When the output's `head_moved_to` is set, someone pushed during the wait: the posted reviews cover `head`, and a round started after the push asks for the new head.
@@ -49,7 +50,7 @@ Stercorario, a review service, lists the reviews a person can ask for on a repos
 - `github_login` is the account stercorario answers a label for. Compared without case, since GitHub ignores it and stercorario stores logins lowercased: when it is not the login that adds the labels (`gh api user --jq .login`, or `get_me`), its list is for someone else: say so, and list the labels as before.
 - A call that fails, or asks to sign in, is no answer: say so, and list the labels as before.
 - An empty `reviews` comes with a `reason`. When `repository_known` is false, stercorario does not review the repository: list the labels as before. Otherwise say the reason, and the repository offers no tagged label.
-- Its list is the whole answer for the rounds: add no label from another source to them. A label `$ARGUMENTS` names still runs, as step 2 says. The list can name a label the repository does not carry yet, which the run script refuses: leave that label out of its round, and say so.
+- Its list is the whole answer for the rounds: add no label from another source to them. A label `$ARGUMENTS` names still runs, as step 2 says. The list can name a label the repository does not carry yet. The run script reports such a label as `missing` and requests the others.
 
 ## Steps
 

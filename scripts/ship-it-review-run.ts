@@ -27,7 +27,9 @@ Requests a review for each label on the pull request's head commit, then
 waits until each review posted, was refused, ended without a review, or
 ran out of time. A request that ended without a review or ran out of time
 is made again, up to --retries times. A review that already posted on the
-head is reported without a new request. Prints the outcome as JSON.
+head is reported without a new request. A label the repository does not
+have is reported as missing and never requested. Prints the outcome as
+JSON.
 
 Arguments:
   <pull request>   A number or a github.com pull request URL
@@ -46,6 +48,7 @@ const CLOCK_SKEW_MS = 2 * 60 * 1000;
 
 type ReviewStatus =
   | "pending"
+  | "missing"
   | "posted"
   | "refused"
   | "unanswered"
@@ -123,7 +126,7 @@ await main(async () => {
 
   const head = openHead(repository, number);
   const requests = reviewRequests(repository, labelNames);
-  const settled: ReviewRequest[] = [];
+  const settled = requests.filter(({ status }) => status === "missing");
 
   const settle = (
     request: ReviewRequest,
@@ -135,8 +138,9 @@ await main(async () => {
   };
 
   const postedReviews = reviews(repository, number);
+  let pending = requests.filter((request) => !settled.includes(request));
 
-  for (const request of requests) {
+  for (const request of pending) {
     const review = markedReview(postedReviews, request, head);
 
     if (review) {
@@ -144,7 +148,7 @@ await main(async () => {
     }
   }
 
-  let pending = requests.filter((request) => !settled.includes(request));
+  pending = pending.filter((request) => !settled.includes(request));
 
   requestReviews(repository, number, head, pending);
 
@@ -298,13 +302,7 @@ function reviewRequests(
       );
     }
 
-    if (!existing.has(label)) {
-      throw new ScriptError(
-        `The label ${label} does not exist on ${repository}. ship-it-review-list.ts lists the review labels it offers.`,
-      );
-    }
-
-    return {
+    const request: ReviewRequest = {
       label,
       service: parsed.service,
       kind: parsed.kind,
@@ -315,6 +313,13 @@ function reviewRequests(
       knownCommentIds: new Set(),
       knownCheckIds: new Set(),
     };
+
+    if (!existing.has(label)) {
+      request.status = "missing";
+      request.reason = `The label ${label} does not exist on ${repository}. ship-it-review-list.ts lists the review labels it offers.`;
+    }
+
+    return request;
   });
 }
 
