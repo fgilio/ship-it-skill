@@ -39,14 +39,14 @@ A PR that reaches you carries a proof (what ran, and the evidence) and a reading
 
 ## Review services
 
-The review skill works with any review service that follows one protocol, and names none:
+The review skill works with any review service that follows one protocol:
 
 - The service offers each review as a repository label, `<service>-review:<kind>`, and starts that review on the PR's head when the label is added.
 - The label's description tags the review's focus: `[correctness]`, `[cleanup]` or `[maintainability]`. Untagged labels stay out of the rounds.
 - The answer is a PR review whose body ends with `<!-- <service>-review kind=<kind> sha=<head sha> -->`, or a refusal comment that carries `<!-- <service>-review-refused -->` and names the label.
 - While the review runs, a check run named after the label shows on the head.
 
-`scripts/` holds the two scripts that speak it: one lists the tagged labels, the other requests reviews and waits for each answer. Without `gh`, the review skill speaks it through the GitHub MCP tools.
+`scripts/` holds the two scripts that speak it: one lists the tagged labels, the other requests reviews and waits for each answer. Without `gh`, the review skill speaks it through the GitHub MCP tools. When the session has the MCP server of stercorario, a review service, the skill asks it which reviews the person can ask for instead of listing the labels.
 
 ## CI watch
 

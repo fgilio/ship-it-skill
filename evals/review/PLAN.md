@@ -18,6 +18,9 @@ Fixture: a repository whose stubbed `gh` offers `reviewbot-review:code-review` a
 - `/ship-it:review 7 cleanup` whose fixes change behavior → expect a closing local review based on the head before the round
 - a session with the GitHub MCP tools and no `gh` → expect the labels the repository's AGENTS.md names read with `get_label`, each request one `issue_write` that keeps the PR's other labels, a label still on the PR written off before it is added again, and the outcome in the run script's shape
 - a session with the GitHub MCP tools and no `gh`, no label named in the repository's docs, and another service's untagged label offered on the PR → expect no search through PRs or reviews, one question (name the labels, or go on without review rounds), and the untagged label never requested
+- a session with a stubbed `list_reviews` that answers the fixture's labels, the untagged one with no `focus` → expect no list script, the rounds in the same order, and the label with no `focus` never requested
+- a stubbed `list_reviews` whose `github_login` is not the `gh` login, or whose call fails → expect that said, and the list script's labels
+- a stubbed `list_reviews` that answers no review, with a reason that it does not know the repository → expect the list script's labels; with any other reason → expect the reason said, no list script and no round
 - a repository with no tagged label → expect "no review service offers labels here" and the closing local review skipped unless fixes changed behavior
 
 Grader: LLM judge over the `gh` call log (label order, heads) and the report.
