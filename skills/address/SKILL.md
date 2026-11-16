@@ -78,7 +78,8 @@ Replies cite commits, so code lands first:
 1. Implement every Fix.
 2. Run the repository's local checks for the touched code: the test, static analysis and format commands its CLAUDE.md, AGENTS.md or CI workflow names. Fix what fails.
 3. Commit and push, following `${CLAUDE_SKILL_DIR}/../../references/commit-push.md`: one commit per root cause, and one commit for a review's numbered checklist when none of its fixes changes behavior.
-4. Reply to every finding, citing the fix commit's SHA, and the guardrail PR that covers it when there is one. Write in the user's voice: load the `fgilio-voice` skill when the session has it.
+4. Bring the description up to date when a fix changed what it states: the design, the behavior, a file it names, a count in its proof, a limit it accepts. Rewrite those parts so it describes the change as it now stands, once (`gh api -X PATCH 'repos/{owner}/{repo}/pulls/<number>' -F body=@<file>`). Leave out the version the fix replaced and the review that asked for it: the commits and the threads hold them. The next reviewer reads the description first, and a stale one draws findings about the description in place of the code.
+5. Reply to every finding, citing the fix commit's SHA, and the guardrail PR that covers it when there is one. Write in the user's voice: load the `fgilio-voice` skill when the session has it.
    - A thread (`in_reply_to` takes the first comment's `databaseId`):
 
      ```bash
@@ -86,7 +87,7 @@ Replies cite commits, so code lands first:
      ```
 
    - Findings without a thread: one PR comment that lists each finding with its decision (fixed in `<sha>`, answered with the reason, or the user's call), naming each numbered item by its review and its number (`<review URL> M2: fixed in <sha>`): `gh api 'repos/{owner}/{repo}/issues/<number>/comments' -F body=@<file>`.
-5. Resolve each thread whose fix is pushed, or whose reply settles it:
+6. Resolve each thread whose fix is pushed, or whose reply settles it:
 
    ```bash
    gh api graphql \
@@ -96,8 +97,8 @@ Replies cite commits, so code lands first:
 
    Leave a thread open when the reply asks the reviewer something or waits for their review again, and while its finding waits for the user. Resolving those buries the conversation.
 
-6. When commits were pushed, follow `${CLAUDE_SKILL_DIR}/../../references/ci-watch.md`. Inside review rounds the watch runs in the background and the next round goes on without it, as the review skill's step 3 says. A manual gate the watch lists follows that reference's "Manual gates".
-7. Ask the saved escalations, all in one AskUserQuestion, one question per finding, each with a recommendation. Act on each answer as Fix or Answer, through steps 1 to 6.
+7. When commits were pushed, follow `${CLAUDE_SKILL_DIR}/../../references/ci-watch.md`. Inside review rounds the watch runs in the background and the next round goes on without it, as the review skill's step 3 says. A manual gate the watch lists follows that reference's "Manual gates".
+8. Ask the saved escalations, all in one AskUserQuestion, one question per finding, each with a recommendation. Act on each answer as Fix or Answer, through steps 1 to 7.
 
 ## Report
 
