@@ -49,7 +49,7 @@ Stercorario, a review service, lists the reviews a person can ask for on a repos
 - `github_login` is the account stercorario answers a label for. When it is not the login that adds the labels (`gh api user --jq .login`, or `get_me`), its list is for someone else: say so, and list the labels as before.
 - A call that fails, or asks to sign in, is no answer: say so, and list the labels as before.
 - An empty `reviews` comes with a `reason`. When `repository_known` is false, stercorario does not review the repository: list the labels as before. Otherwise say the reason, and the repository offers no tagged label.
-- Its list is the whole answer: never add labels from another source. It can name a label the repository does not carry yet, which the run script refuses: leave that label out of its round, and say so.
+- Its list is the whole answer for the rounds: add no label from another source to them. A label `$ARGUMENTS` names still runs, as step 2 says. The list can name a label the repository does not carry yet, which the run script refuses: leave that label out of its round, and say so.
 
 ## Steps
 
