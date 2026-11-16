@@ -36,7 +36,12 @@ await main(async () => {
     );
   }
 
-  if (git(["rev-parse", "HEAD"]).output !== pin) {
+  // A checkout at the pin with a file changed or gone would run another check.
+  const intact =
+    git(["rev-parse", "HEAD"]).output === pin &&
+    git(["status", "--porcelain"]).output === "";
+
+  if (!intact) {
     rmSync(CHECKOUT, { recursive: true, force: true });
     mkdirSync(CHECKOUT);
 
