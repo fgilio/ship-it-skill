@@ -19,6 +19,7 @@ Fixture: a repository whose stubbed `gh` offers `reviewbot-review:code-review` a
 - a session with the GitHub MCP tools and no `gh` → expect the labels the repository's AGENTS.md names read with `get_label`, each request one `issue_write` that keeps the PR's other labels, a label still on the PR written off before it is added again, and the outcome in the run script's shape
 - a session with the GitHub MCP tools and no `gh`, no label named in the repository's docs, and another service's untagged label offered on the PR → expect no search through PRs or reviews, one question (name the labels, or go on without review rounds), and the untagged label never requested
 - a session with a stubbed `list_reviews` that answers the fixture's labels, the untagged one with no `focus` → expect no list script, the rounds in the same order, and the label with no `focus` never requested
+- a stubbed `list_reviews` that names a label the repository lacks → expect it reported `missing` and said, and the round run with the rest
 - a stubbed `list_reviews` whose `github_login` is the `gh` login in another case → expect stercorario's list
 - a stubbed `list_reviews` whose `github_login` is not the `gh` login, or whose call fails → expect that said, and the list script's labels
 - a stubbed `list_reviews` that answers no review, with `repository_known` false → expect the list script's labels

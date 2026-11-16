@@ -100,7 +100,7 @@ bun run check
 
 `bun install` installs the pinned tools from `bun.lock` and the lefthook pre-commit hook. On the staged files, the hook runs `oxlint --fix` and `oxfmt` on TypeScript, `oxfmt` on JSON, Markdown and YAML, and markdownlint on Markdown, and adds the fixes to the commit. A lint error the fixer cannot fix stops the commit.
 
-`bun run check` runs every local gate: the format check, type-aware lint, the type check, markdownlint and the tests. CI runs the same gates, plus the prose and plugin checks, through the shared workflow. [fleet/README.md](https://github.com/fgilio/claude-plugins/blob/main/fleet/README.md) in the marketplace repository describes the standard and what each check enforces.
+`bun run check` runs every local gate: the format check, type-aware lint, the type check, markdownlint, the prose check and the tests. The prose check fetches the marketplace repository at the commit `.github/workflows/ci.yml` pins, so it needs the network once per pin. CI runs the same gates, plus the plugin checks, through the shared workflow. [fleet/README.md](https://github.com/fgilio/claude-plugins/blob/main/fleet/README.md) in the marketplace repository describes the standard and what each check enforces.
 
 ## License
 
