@@ -474,18 +474,59 @@ describe("ship-it-review-run.ts", () => {
     expect(labelWrites()).toEqual([]);
   });
 
-  test("refuses a label the repository does not have", async () => {
+  test("reports every label as missing when the repository has none of them", async () => {
     writeState();
 
-    const result = await runScript("ship-it-review-run.ts", [
-      "7",
+    const output = await runReviews(["reviewbot-review:security"]);
+
+    expect(
+      output.reviews.map(({ label, status }) => ({ label, status })),
+    ).toEqual([{ label: "reviewbot-review:security", status: "missing" }]);
+    expect(labelWrites()).toEqual([]);
+  });
+
+  test("reports a label the repository does not have and requests the others", async () => {
+    writeState({
+      outcomes: { "reviewbot-review:simplify": [{ review: {} }] },
+    });
+
+    const output = await runReviews([
       "reviewbot-review:security",
+      "reviewbot-review:simplify",
     ]);
 
-    expect(result.code).toBe(1);
-    expect(result.stderr).toMatch(
-      /The label reviewbot-review:security does not exist on acme\/shop/,
-    );
+    expect(
+      output.reviews.map(({ label, status, attempts, reason }) => ({
+        label,
+        status,
+        attempts,
+        reason,
+      })),
+    ).toEqual([
+      {
+        label: "reviewbot-review:security",
+        status: "missing",
+        attempts: 0,
+        reason:
+          "The label reviewbot-review:security does not exist on acme/shop. ship-it-review-list.ts lists the review labels it offers.",
+      },
+      {
+        label: "reviewbot-review:simplify",
+        status: "posted",
+        attempts: 1,
+        reason: undefined,
+      },
+    ]);
+    expect(labelWrites()).toEqual([
+      [
+        "api",
+        "-X",
+        "POST",
+        "repos/acme/shop/issues/7/labels",
+        "-f",
+        "labels[]=reviewbot-review:simplify",
+      ],
+    ]);
   });
 
   test("refuses a label that requests no review", async () => {
