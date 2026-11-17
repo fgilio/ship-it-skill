@@ -28,7 +28,7 @@ Fixture: a repository whose stubbed `gh` offers `reviewbot-review:code-review` a
 - a stubbed `list_reviews` whose `unavailable` names one correctness label as `already_reviewed`, with another correctness label in `reviews` → expect a request for the other label only, the first one's `review_url` in the report as posted, and both reviews' findings addressed in the correctness round
 - `/ship-it:review 7 cleanup` with a stubbed `list_reviews` whose `unavailable` names the cleanup label and whose `reviews` holds a correctness label → expect no request, and the cleanup review's findings addressed
 - a stubbed `list_reviews` whose `unavailable` names the only correctness label, with an open finding, and whose `reviews` holds a cleanup label → expect the finding addressed before the cleanup request, and a correctness run on the new head when its fix changes behavior
-- a stubbed `list_reviews` whose `unavailable` names a cleanup label whose fix changes behavior → expect no correctness run for it, and the closing local review
+- a stubbed `list_reviews` that offers no correctness label, and whose `unavailable` names a cleanup label whose fix changes behavior → expect no correctness run, and the closing local review
 - a stubbed `list_reviews` whose `unavailable` entry has no `focus` → expect it counted in the correctness round
 - a stubbed `list_reviews` with an empty `reviews`, no `reason` and every label in `unavailable` → expect each round run with no request, in focus order
 - a stubbed `list_reviews` whose `head_sha` is not the PR's head → expect nothing counted as posted, and the call made again
