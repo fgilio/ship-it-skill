@@ -24,8 +24,9 @@ import {
 const USAGE = `Usage: ship-it-review-run.ts <pull request> <label>... [options]
 
 Requests a review for each label on the pull request's head commit, then
-waits until each review posted, was refused, ended without a review, or
-ran out of time. A request that ended without a review or ran out of time
+waits until each review posted, was refused, was cancelled, ended without
+a review, or ran out of time. A cancelled request settles at once and is
+never retried. A request that ended without a review or ran out of time
 is made again, up to --retries times. A review that already posted on the
 head is reported without a new request. A label the repository does not
 have is reported as missing and never requested. Prints the outcome as
@@ -51,6 +52,7 @@ type ReviewStatus =
   | "missing"
   | "posted"
   | "refused"
+  | "cancelled"
   | "unanswered"
   | "timeout"
   | "closed"
@@ -221,6 +223,13 @@ await main(async () => {
       }
 
       const check = latestCheckRun(repository, head, request);
+
+      if (check?.status === "completed" && check.conclusion === "cancelled") {
+        settle(request, "cancelled", {
+          reason: check.title || check.conclusion,
+        });
+        continue;
+      }
 
       if (check?.status === "completed") {
         request.completedSeenAt ??= Date.now();
