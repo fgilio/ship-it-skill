@@ -8,7 +8,7 @@ With the GitHub MCP tools (`${CLAUDE_SKILL_DIR}/../../references/github.md`), ca
    - The PR closed: `closed`. The head moved: `superseded`.
    - A review whose body ends with the marker `<!-- <service>-review kind=<kind> sha=<head> ... -->`: `posted`. A marker quoted inside the text does not count.
    - A comment that is new since step 2, carries `<!-- <service>-review-refused` and names the label on its own (`x-review:code-review:high` does not name `x-review:code-review`): `refused`, with the comment's first line as the reason.
-   - A check run named after the label, new since step 2 and completed with conclusion `cancelled`: `cancelled` at once, with no grace wait or retry. A person stopped it on purpose. Do not request it again. Report it, and go on with the round.
+   - A check run named after the label, new since step 2 and completed with conclusion `cancelled` or `skipped`: `cancelled` at once, with no grace wait or retry. A person stopped it on purpose. Do not request it again. Report it, and go on with the round.
    - Any other completed check run named after the label, new since step 2, with still no review two reads later: `unanswered`.
    - 30 minutes since the request: `timeout`.
 

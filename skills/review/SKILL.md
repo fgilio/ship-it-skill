@@ -38,7 +38,7 @@ Both scripts need `gh` logged in as the user, since services refuse labels a bot
 | --- | --- | --- |
 | `posted` | The review is on the PR | Address it |
 | `refused` | The service said why it did not start | A refusal because the head already has that review counts as posted, and address finds that review on the PR. Any other reason: escalate as can wait. |
-| `cancelled` | A person stopped the review on purpose | Do not request it again. Report it, and go on with the round. |
+| `cancelled` | A person stopped the review on purpose (its check run concluded `cancelled` or `skipped`) | Do not request it again. Report it, and go on with the round. |
 | `unanswered`, `timeout` | No review after the retry | Escalate as can wait, and go on with the next round |
 | `superseded` | The head moved while the review ran | Ask again for the new head, once |
 | `missing` | The repository does not carry the label, so the script never asked for it | Say so |

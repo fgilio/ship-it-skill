@@ -25,11 +25,12 @@ const USAGE = `Usage: ship-it-review-run.ts <pull request> <label>... [options]
 
 Requests a review for each label on the pull request's head commit, then
 waits until each review posted, was refused, was cancelled, ended without
-a review, or ran out of time. A cancelled request settles at once and is
-never retried. A request that ended without a review or ran out of time
-is made again, up to --retries times. A review that already posted on the
-head is reported without a new request. A label the repository does not
-have is reported as missing and never requested. Prints the outcome as
+a review, or ran out of time. A request whose check run concluded
+cancelled or skipped settles at once as cancelled and is never retried.
+A request that ended without a review or ran out of time is made again,
+up to --retries times. A review that already posted on the head is
+reported without a new request. A label the repository does not have is
+reported as missing and never requested. Prints the outcome as
 JSON.
 
 Arguments:
@@ -46,6 +47,10 @@ Options:
 // GitHub's timestamps and this machine's clock can disagree by a little,
 // so the comment listing starts this much before the earliest request.
 const CLOCK_SKEW_MS = 2 * 60 * 1000;
+
+// A service concludes a review's check run this way when it stopped the
+// review on purpose: a person cancelled it, so asking again would undo that.
+const STOPPED_CONCLUSIONS = new Set(["cancelled", "skipped"]);
 
 type ReviewStatus =
   | "pending"
@@ -224,10 +229,13 @@ await main(async () => {
 
       const check = latestCheckRun(repository, head, request);
 
-      if (check?.status === "completed" && check.conclusion === "cancelled") {
-        settle(request, "cancelled", {
-          reason: check.title || check.conclusion,
-        });
+      const conclusion = check?.conclusion ?? "";
+
+      if (
+        check?.status === "completed" &&
+        STOPPED_CONCLUSIONS.has(conclusion)
+      ) {
+        settle(request, "cancelled", { reason: check.title || conclusion });
         continue;
       }
 
