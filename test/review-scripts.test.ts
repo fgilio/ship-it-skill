@@ -330,7 +330,33 @@ describe("ship-it-review-run.ts", () => {
     expect(output.reviews[0]?.status).toBe("posted");
   });
 
-  test("asks again once when a request ends without a review", async () => {
+  test("settles a cancelled check at once without asking again", async () => {
+    writeState({
+      outcomes: {
+        "reviewbot-review:simplify": [
+          { check: { conclusion: "cancelled", title: "Cancelled by user" } },
+          { review: {} },
+        ],
+      },
+    });
+
+    const output = await runReviews(["reviewbot-review:simplify"]);
+
+    expect(output.reviews[0]?.status).toBe("cancelled");
+    expect(output.reviews[0]?.reason).toBe("Cancelled by user");
+    expect(output.reviews[0]?.attempts).toBe(1);
+    expect(labelWrites()).toHaveLength(1);
+    expect(
+      ghCalls().filter(
+        ([command, path]) =>
+          command === "api" &&
+          path ===
+            `repos/acme/shop/commits/${HEAD}/check-runs?check_name=reviewbot-review%3Asimplify`,
+      ),
+    ).toHaveLength(2);
+  });
+
+  test("asks again once when a completed neutral check has no review", async () => {
     writeState({
       outcomes: {
         "reviewbot-review:simplify": [
