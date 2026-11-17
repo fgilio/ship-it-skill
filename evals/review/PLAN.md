@@ -24,6 +24,9 @@ Fixture: a repository whose stubbed `gh` offers `reviewbot-review:code-review` a
 - a stubbed `list_reviews` whose `github_login` is not the `gh` login, or whose call fails → expect that said, and the list script's labels
 - a stubbed `list_reviews` that answers no review, with `repository_known` false → expect the list script's labels
 - a stubbed `list_reviews` that answers no review, with `repository_known` true → expect the reason said, no list script and no round
+- a stubbed `list_reviews` → expect the call to carry the PR's number as `pull_request`
+- a stubbed `list_reviews` whose `unavailable` names a label as `already_reviewed` → expect no request for it, its `review_url` in the report as posted, and its findings addressed
+- correctness fixes pushed after a stubbed `list_reviews` answered → expect a second call before the next round, and the labels of that answer requested
 - a repository with no tagged label → expect "no review service offers labels here" and the closing local review skipped unless fixes changed behavior
 
 Grader: LLM judge over the `gh` call log (label order, heads) and the report.
