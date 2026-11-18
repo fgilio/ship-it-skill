@@ -7,7 +7,7 @@ import {
   ghRecords,
   main,
   parseArguments,
-  parseFocus,
+  parseReviewDescription,
   parseReviewLabel,
   printJson,
   resolveRepository,
@@ -19,7 +19,8 @@ const USAGE = `Usage: ship-it-review-list.ts [--repo owner/name]
 Lists, as JSON, every label of the repository that requests a review from
 a review service (\`<service>-review:<kind>\`) and whose description tags
 its focus: [correctness], [cleanup] or [maintainability]. Ordered by focus,
-then by label. A label without a focus tag is left out.
+then by label. A label without a focus tag is left out. The default boolean
+is true when the description carries [default].
 
 Options:
   --repo owner/name   The repository (default: the current directory's)
@@ -43,10 +44,20 @@ await main(async () => {
     .flatMap(({ name, description }) => {
       const label = String(name);
       const parsed = parseReviewLabel(label);
-      const focus = parseFocus(stringOrNull(description));
+      const { focus, default: isDefault } = parseReviewDescription(
+        stringOrNull(description),
+      );
 
       return parsed && focus
-        ? [{ label, service: parsed.service, kind: parsed.kind, focus }]
+        ? [
+            {
+              label,
+              service: parsed.service,
+              kind: parsed.kind,
+              focus,
+              default: isDefault,
+            },
+          ]
         : [];
     })
     .toSorted(
