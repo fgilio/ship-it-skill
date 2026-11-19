@@ -389,8 +389,14 @@ export function parseReviewLabel(name: string): ReviewLabel | null {
   return { service, kind, level: level ?? null };
 }
 
-export function parseFocus(description: string | null): string | null {
-  return description?.match(FOCUS_TAG)?.[1]?.toLowerCase() ?? null;
+export function parseReviewDescription(description: string | null): {
+  focus: string | null;
+  default: boolean;
+} {
+  return {
+    focus: description?.match(FOCUS_TAG)?.[1]?.toLowerCase() ?? null,
+    default: /\[default\]/i.test(description ?? ""),
+  };
 }
 
 export function sleep(seconds: number): Promise<void> {

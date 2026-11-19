@@ -148,11 +148,11 @@ describe("ship-it-review-list.ts", () => {
         },
         {
           name: "reviewbot-review:code-review",
-          description: "[correctness] Bugs",
+          description: "[correctness] [default] Bugs",
         },
         {
           name: "reviewbot-review:code-review:high",
-          description: "Bugs at high",
+          description: "[default] Bugs at high",
         },
         {
           name: "reviewbot-review:security",
@@ -175,24 +175,63 @@ describe("ship-it-review-list.ts", () => {
         service: "otherbot",
         kind: "bugs",
         focus: "correctness",
+        default: false,
       },
       {
         label: "reviewbot-review:code-review",
         service: "reviewbot",
         kind: "code-review",
         focus: "correctness",
+        default: true,
       },
       {
         label: "reviewbot-review:simplify",
         service: "reviewbot",
         kind: "simplify",
         focus: "cleanup",
+        default: false,
       },
       {
         label: "reviewbot-review:fgilio",
         service: "reviewbot",
         kind: "fgilio",
         focus: "maintainability",
+        default: false,
+      },
+    ]);
+  });
+
+  test("lists multiple labels of one focus without a default", async () => {
+    writeState({
+      labels: [
+        {
+          name: "reviewbot-review:full-review",
+          description: "[correctness] Full review",
+        },
+        {
+          name: "reviewbot-review:code-review",
+          description: "[correctness] Code review",
+        },
+      ],
+    });
+
+    const result = await runScript("ship-it-review-list.ts", []);
+
+    expect(result.code, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual([
+      {
+        label: "reviewbot-review:code-review",
+        service: "reviewbot",
+        kind: "code-review",
+        focus: "correctness",
+        default: false,
+      },
+      {
+        label: "reviewbot-review:full-review",
+        service: "reviewbot",
+        kind: "full-review",
+        focus: "correctness",
+        default: false,
       },
     ]);
   });
@@ -213,7 +252,7 @@ describe("ship-it-review-list.ts", () => {
 });
 
 describe("ship-it-review-run.ts", () => {
-  test("requests every label in one edit and reports each posted review", async () => {
+  test("requests the explicit labels in one edit and reports each posted review", async () => {
     writeState({
       outcomes: {
         "reviewbot-review:code-review": [{ afterPolls: 1, review: {} }],
