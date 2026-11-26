@@ -75,8 +75,8 @@ With [bonsai](https://github.com/publicala/claude-plugins/tree/main/plugins/bons
 
 - GitHub access as you, since review services refuse labels a bot adds: the GitHub CLI (`gh`) logged in, or the GitHub MCP server. `gh` comes first when both work. With MCP the agent makes each call and each check of a wait itself, so the same work takes more turns ([`references/github.md`](references/github.md)).
 - [Bun](https://bun.sh) 1.4 or later, for the scripts.
-- The `code-review` skill that ships with Claude Code, for local reviews when `codex-partner` is missing.
-- Used when the session has them: `codex-partner` (local reviews by a second model), `pr-guidelines` (PR descriptions), `fgilio-voice` (replies), bonsai (guardrails), a Slack tool and a push notification tool (escalation).
+- The `code-review` skill that ships with Claude Code, for local reviews when `partner-agent` is missing.
+- Used when the session has them: `partner-agent` (local reviews by a second model), `pr-guidelines` (PR descriptions), `fgilio-voice` (replies), bonsai (guardrails), a Slack tool and a push notification tool (escalation).
 
 ## Install
 
